@@ -177,6 +177,151 @@ async function searchYugioh(query: string): Promise<SearchResult[]> {
   );
 }
 
+// Map our categories to TheSportsDB sport names
+const SPORT_MAP: Record<string, string> = {
+  baseball: "Baseball",
+  football: "American Football",
+  basketball: "Basketball",
+  hockey: "Ice Hockey",
+};
+
+// Sports card adapter (TheSportsDB for player data + eBay Browse for pricing)
+async function searchSportsPlayer(
+  query: string,
+  category: CardCategory
+): Promise<SearchResult[]> {
+  // Search TheSportsDB for player info
+  const playerQuery = query.replace(/\s+/g, "_");
+  const res = await fetch(
+    `https://www.thesportsdb.com/api/v1/json/123/searchplayers.php?p=${encodeURIComponent(playerQuery)}`
+  );
+  if (!res.ok) return [];
+  const data = await res.json();
+  if (!data.player) return [];
+
+  const targetSport = SPORT_MAP[category];
+
+  // Filter to matching sport and deduplicate by player name
+  const seen = new Set<string>();
+  const players = (
+    data.player as {
+      idPlayer: string;
+      strPlayer: string;
+      strTeam: string;
+      strSport: string;
+      strThumb: string | null;
+      strCutout: string | null;
+      strPosition: string | null;
+      dateBorn: string | null;
+      strNationality: string | null;
+    }[]
+  )
+    .filter((p) => {
+      if (targetSport && p.strSport !== targetSport) return false;
+      if (seen.has(p.strPlayer)) return false;
+      seen.add(p.strPlayer);
+      return true;
+    })
+    .slice(0, 10);
+
+  // Try to get eBay pricing estimates for each player
+  const results: SearchResult[] = [];
+
+  for (const player of players) {
+    const prices = await fetchEbayEstimate(player.strPlayer, category);
+
+    results.push({
+      external_id: `sportsdb_${player.idPlayer}`,
+      external_source: "thesportsdb",
+      name: player.strPlayer,
+      set_name: player.strTeam,
+      card_number: null,
+      year: null,
+      rarity: player.strPosition,
+      image_url: player.strCutout || player.strThumb || null,
+      category,
+      prices,
+    });
+  }
+
+  return results;
+}
+
+// eBay Browse API for sports card pricing estimates
+// Uses OAuth client credentials flow — needs EBAY_CLIENT_ID and EBAY_CLIENT_SECRET env vars
+async function fetchEbayEstimate(
+  playerName: string,
+  category: CardCategory
+): Promise<SearchResult["prices"]> {
+  const clientId = process.env.EBAY_CLIENT_ID;
+  const clientSecret = process.env.EBAY_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return [];
+
+  try {
+    // Get OAuth token
+    const tokenRes = await fetch(
+      "https://api.ebay.com/identity/v1/oauth2/token",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
+        },
+        body: "grant_type=client_credentials&scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope",
+      }
+    );
+    if (!tokenRes.ok) return [];
+    const tokenData = await tokenRes.json();
+    const accessToken = tokenData.access_token;
+
+    // Search for active Buy It Now listings
+    const sportKeyword =
+      category === "football"
+        ? "football"
+        : category === "basketball"
+          ? "basketball"
+          : category === "hockey"
+            ? "hockey"
+            : "baseball";
+    const searchQuery = `${playerName} ${sportKeyword} card`;
+    const browseRes = await fetch(
+      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(searchQuery)}&category_ids=261328&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US&sort=price&limit=10`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      }
+    );
+    if (!browseRes.ok) return [];
+    const browseData = await browseRes.json();
+
+    const listings = browseData.itemSummaries || [];
+    if (listings.length === 0) return [];
+
+    // Extract prices and compute median
+    const listingPrices: number[] = listings
+      .map(
+        (item: { price?: { value?: string } }) =>
+          item.price?.value ? parseFloat(item.price.value) : null
+      )
+      .filter((p: number | null): p is number => p !== null && p > 0)
+      .sort((a: number, b: number) => a - b);
+
+    if (listingPrices.length === 0) return [];
+
+    const median =
+      listingPrices[Math.floor(listingPrices.length / 2)];
+    const low = listingPrices[0];
+    const high = listingPrices[listingPrices.length - 1];
+
+    return [
+      { source: "ebay", price_usd: median, condition_key: "market" },
+      { source: "ebay", price_usd: low, condition_key: "low" },
+      { source: "ebay", price_usd: high, condition_key: "high" },
+    ];
+  } catch {
+    return [];
+  }
+}
+
 export async function searchCards(
   category: CardCategory,
   query: string
@@ -192,8 +337,7 @@ export async function searchCards(
     case "football":
     case "basketball":
     case "hockey":
-      // Sports cards: return empty (manual entry only for now)
-      return [];
+      return searchSportsPlayer(query, category);
     default:
       return [];
   }

@@ -32,12 +32,16 @@ export default function AddCardPage() {
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // Manual entry fields (for sports)
+  // Manual/sports entry fields
   const [manualName, setManualName] = useState("");
   const [manualSet, setManualSet] = useState("");
   const [manualNumber, setManualNumber] = useState("");
   const [manualYear, setManualYear] = useState("");
   const [manualRarity, setManualRarity] = useState("");
+
+  const isSportsCategory =
+    category &&
+    ["baseball", "football", "basketball", "hockey"].includes(category);
 
   const isSearchable =
     category &&
@@ -72,7 +76,15 @@ export default function AddCardPage() {
         body.grade = parseFloat(grade);
       }
       if (selectedCard) {
-        body.searchResult = selectedCard;
+        // For sports cards, merge in the set/year/number from manual fields
+        const enrichedResult = { ...selectedCard };
+        if (isSportsCategory) {
+          if (manualSet) enrichedResult.set_name = manualSet;
+          if (manualNumber) enrichedResult.card_number = manualNumber;
+          if (manualYear) enrichedResult.year = parseInt(manualYear);
+          if (manualRarity) enrichedResult.rarity = manualRarity;
+        }
+        body.searchResult = enrichedResult;
       } else {
         body.manualCard = {
           name: manualName,
@@ -354,6 +366,55 @@ export default function AddCardPage() {
           )}
 
           <div className="space-y-5">
+            {/* Sports card specifics — set, year, card number */}
+            {isSportsCategory && selectedCard && (
+              <div className="rounded-xl bg-card-bg border border-card-border p-4 space-y-3">
+                <div className="text-sm font-medium text-muted">Card Details</div>
+                <div>
+                  <label className="block text-xs text-muted mb-1">Set Name</label>
+                  <input
+                    type="text"
+                    value={manualSet}
+                    onChange={(e) => setManualSet(e.target.value)}
+                    placeholder="e.g. 2023 Topps Chrome"
+                    className="w-full px-3 py-2 rounded-lg bg-background border border-card-border focus:border-accent focus:outline-none text-sm"
+                  />
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs text-muted mb-1">Year</label>
+                    <input
+                      type="number"
+                      value={manualYear}
+                      onChange={(e) => setManualYear(e.target.value)}
+                      placeholder="2023"
+                      className="w-full px-3 py-2 rounded-lg bg-background border border-card-border focus:border-accent focus:outline-none text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-muted mb-1">Card #</label>
+                    <input
+                      type="text"
+                      value={manualNumber}
+                      onChange={(e) => setManualNumber(e.target.value)}
+                      placeholder="#123"
+                      className="w-full px-3 py-2 rounded-lg bg-background border border-card-border focus:border-accent focus:outline-none text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-muted mb-1">Parallel</label>
+                    <input
+                      type="text"
+                      value={manualRarity}
+                      onChange={(e) => setManualRarity(e.target.value)}
+                      placeholder="Refractor"
+                      className="w-full px-3 py-2 rounded-lg bg-background border border-card-border focus:border-accent focus:outline-none text-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Owner */}
             <div>
               <label className="block text-sm text-muted mb-2">
@@ -524,10 +585,15 @@ export default function AddCardPage() {
               <h2 className="text-xl font-bold">
                 {selectedCard?.name || manualName}
               </h2>
-              {(selectedCard?.set_name || manualSet) && (
+              {(manualSet || selectedCard?.set_name) && (
                 <p className="text-sm text-muted">
-                  {selectedCard?.set_name || manualSet}
+                  {manualSet || selectedCard?.set_name}
+                  {manualYear && ` (${manualYear})`}
+                  {manualNumber && ` #${manualNumber}`}
                 </p>
+              )}
+              {manualRarity && (
+                <p className="text-xs text-muted">{manualRarity}</p>
               )}
             </div>
 

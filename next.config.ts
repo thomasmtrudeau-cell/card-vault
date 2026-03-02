@@ -8,6 +8,8 @@ const nextConfig: NextConfig = {
       { hostname: "c1.scryfall.com" },
       { hostname: "storage.googleapis.com" },
       { hostname: "images.ygoprodeck.com" },
+      { hostname: "r2.thesportsdb.com" },
+      { hostname: "www.thesportsdb.com" },
     ],
   },
 };
