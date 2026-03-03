@@ -296,7 +296,11 @@ async function fetchEbayEstimate(
     const listings = browseData.itemSummaries || [];
     if (listings.length === 0) return [];
 
-    // Extract prices and compute median
+    // Floor-price model: take lowest 5 BIN listings, median them,
+    // then discount 15% to approximate actual sold value
+    const DISCOUNT = 0.85; // 15% below asking ≈ sold price
+    const FLOOR_COUNT = 5;
+
     const listingPrices: number[] = listings
       .map(
         (item: { price?: { value?: string } }) =>
@@ -307,13 +311,15 @@ async function fetchEbayEstimate(
 
     if (listingPrices.length === 0) return [];
 
-    const median =
-      listingPrices[Math.floor(listingPrices.length / 2)];
-    const low = listingPrices[0];
+    // Use the lowest N listings for the floor estimate
+    const floor = listingPrices.slice(0, FLOOR_COUNT);
+    const floorMedian = floor[Math.floor(floor.length / 2)];
+    const estimated = Math.round(floorMedian * DISCOUNT * 100) / 100;
+    const low = Math.round(listingPrices[0] * DISCOUNT * 100) / 100;
     const high = listingPrices[listingPrices.length - 1];
 
     return [
-      { source: "ebay", price_usd: median, condition_key: "market" },
+      { source: "ebay", price_usd: estimated, condition_key: "market" },
       { source: "ebay", price_usd: low, condition_key: "low" },
       { source: "ebay", price_usd: high, condition_key: "high" },
     ];

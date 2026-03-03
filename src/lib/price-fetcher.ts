@@ -196,12 +196,16 @@ async function fetchEbaySportsPrice(
 
     if (listingPrices.length === 0) return [];
 
-    const median = listingPrices[Math.floor(listingPrices.length / 2)];
-    const low = listingPrices[0];
+    // Floor-price model: lowest 5 BIN listings, 15% discount ≈ sold value
+    const DISCOUNT = 0.85;
+    const floor = listingPrices.slice(0, 5);
+    const floorMedian = floor[Math.floor(floor.length / 2)];
+    const estimated = Math.round(floorMedian * DISCOUNT * 100) / 100;
+    const low = Math.round(listingPrices[0] * DISCOUNT * 100) / 100;
     const high = listingPrices[listingPrices.length - 1];
 
     const prices: Omit<PriceCache, "id" | "fetched_at">[] = [
-      { card_id: card.id, source: "ebay", price_usd: median, condition_key: "market" },
+      { card_id: card.id, source: "ebay", price_usd: estimated, condition_key: "market" },
       { card_id: card.id, source: "ebay", price_usd: low, condition_key: "low" },
       { card_id: card.id, source: "ebay", price_usd: high, condition_key: "high" },
     ];
