@@ -193,7 +193,7 @@ async function fetchEbaySportsPrice(
     parts.push("card");
 
     const browseRes = await fetch(
-      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(parts.join(" "))}&category_ids=261328&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US&sort=price&limit=10`,
+      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(parts.join(" "))}&category_ids=261328&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US&sort=price&limit=25`,
       { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
     );
     if (!browseRes.ok) return [];
@@ -210,12 +210,13 @@ async function fetchEbaySportsPrice(
 
     if (listingPrices.length === 0) return [];
 
-    // Floor-price model: lowest 5 BIN listings, 15% discount ≈ sold value
+    // Floor-price model: lowest 5 BIN, 15% discount for market estimate
+    // Low = actual lowest BIN (what you could buy it for right now)
     const DISCOUNT = 0.85;
     const floor = listingPrices.slice(0, 5);
     const floorMedian = floor[Math.floor(floor.length / 2)];
     const estimated = Math.round(floorMedian * DISCOUNT * 100) / 100;
-    const low = Math.round(listingPrices[0] * DISCOUNT * 100) / 100;
+    const low = listingPrices[0];
     const high = listingPrices[listingPrices.length - 1];
 
     const prices: Omit<PriceCache, "id" | "fetched_at">[] = [

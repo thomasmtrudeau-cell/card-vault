@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
     const query = parts.join(" ");
 
     const browseRes = await fetch(
-      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&category_ids=261328&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US&sort=price&limit=15`,
+      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&category_ids=261328&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US&sort=price&limit=25`,
       { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
     );
     if (!browseRes.ok) {
@@ -96,12 +96,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ prices: [], query });
     }
 
-    // Floor-price model: lowest 5 BIN, 15% discount
+    // Floor-price model: lowest 5 BIN, 15% discount for market estimate
+    // Low = actual lowest BIN (what you could buy it for right now)
     const DISCOUNT = 0.85;
     const floor = listingPrices.slice(0, 5);
     const floorMedian = floor[Math.floor(floor.length / 2)];
     const estimated = Math.round(floorMedian * DISCOUNT * 100) / 100;
-    const low = Math.round(listingPrices[0] * DISCOUNT * 100) / 100;
+    const low = listingPrices[0];
     const high = listingPrices[listingPrices.length - 1];
 
     return NextResponse.json({
