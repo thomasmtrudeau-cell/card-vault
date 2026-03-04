@@ -7,6 +7,7 @@ const links = [
   { href: "/", label: "Dashboard", icon: "🏠" },
   { href: "/collection", label: "Collection", icon: "📦" },
   { href: "/add", label: "Add Card", icon: "➕" },
+  { href: "/wishlist", label: "Wishlist", icon: "⭐" },
 ];
 
 export default function Nav() {

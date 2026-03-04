@@ -16,6 +16,12 @@ import type {
 
 type Step = "category" | "search" | "details" | "confirm";
 
+interface BulkQueueItem {
+  searchResult: SearchResult;
+  owner: Owner;
+  quantity: number;
+}
+
 export default function AddCardPage() {
   const router = useRouter();
   const [step, setStep] = useState<Step>("category");
@@ -33,6 +39,17 @@ export default function AddCardPage() {
   const [saving, setSaving] = useState(false);
   const [estimatingPrice, setEstimatingPrice] = useState(false);
   const [sportsEstimate, setSportsEstimate] = useState<number | null>(null);
+
+  // Duplicate detection
+  const [duplicateNotice, setDuplicateNotice] = useState<{
+    count: number;
+    owners: string[];
+  } | null>(null);
+
+  // Bulk add mode
+  const [bulkMode, setBulkMode] = useState(false);
+  const [bulkQueue, setBulkQueue] = useState<BulkQueueItem[]>([]);
+  const [bulkSaving, setBulkSaving] = useState(false);
 
   // Manual/sports entry fields
   const [manualName, setManualName] = useState("");
@@ -64,6 +81,46 @@ export default function AddCardPage() {
     setSearching(false);
   }, [category, searchQuery]);
 
+  const checkDuplicate = async (result: SearchResult) => {
+    try {
+      const params = new URLSearchParams();
+      if (result.external_id && result.external_source) {
+        params.set("external_id", result.external_id);
+        params.set("external_source", result.external_source);
+      } else {
+        params.set("name", result.name);
+        params.set("category", result.category);
+      }
+      const res = await fetch(`/api/collection/check-duplicate?${params}`);
+      const data = await res.json();
+      if (data.exists) {
+        setDuplicateNotice({ count: data.count, owners: data.owners });
+      } else {
+        setDuplicateNotice(null);
+      }
+    } catch {
+      setDuplicateNotice(null);
+    }
+  };
+
+  const handleSelectCard = async (result: SearchResult) => {
+    setSelectedCard(result);
+    setDuplicateNotice(null);
+
+    if (bulkMode) {
+      // In bulk mode, add to queue immediately
+      setBulkQueue((prev) => [
+        ...prev,
+        { searchResult: result, owner: "remy", quantity: 1 },
+      ]);
+      return;
+    }
+
+    // Check for duplicates
+    checkDuplicate(result);
+    setStep("details");
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -78,7 +135,6 @@ export default function AddCardPage() {
         body.grade = parseFloat(grade);
       }
       if (selectedCard) {
-        // For sports cards, merge in the set/year/number from manual fields
         const enrichedResult = { ...selectedCard };
         if (isSportsCategory) {
           if (manualSet) enrichedResult.set_name = manualSet;
@@ -109,6 +165,29 @@ export default function AddCardPage() {
       alert("Failed to save card. Please try again.");
     }
     setSaving(false);
+  };
+
+  const handleBulkSave = async () => {
+    setBulkSaving(true);
+    try {
+      for (const item of bulkQueue) {
+        await fetch("/api/collection", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            searchResult: item.searchResult,
+            owner: item.owner,
+            condition: "raw",
+            quantity: item.quantity,
+            notes: null,
+          }),
+        });
+      }
+      router.push("/collection");
+    } catch {
+      alert("Some cards may not have been saved.");
+    }
+    setBulkSaving(false);
   };
 
   const estimatedValue =
@@ -158,6 +237,27 @@ export default function AddCardPage() {
       {step === "category" && (
         <div>
           <h1 className="text-2xl font-bold mb-6">Choose Category</h1>
+
+          {/* Bulk mode toggle */}
+          <div className="flex items-center gap-3 mb-6 p-3 rounded-xl bg-card-bg border border-card-border">
+            <button
+              onClick={() => setBulkMode(!bulkMode)}
+              className={`relative w-10 h-6 rounded-full transition-colors ${
+                bulkMode ? "bg-accent" : "bg-card-border"
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${
+                  bulkMode ? "translate-x-4" : ""
+                }`}
+              />
+            </button>
+            <div>
+              <div className="text-sm font-medium">Bulk Mode</div>
+              <div className="text-xs text-muted">Add multiple cards at once</div>
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             {CATEGORIES.map((cat) => (
               <button
@@ -168,6 +268,8 @@ export default function AddCardPage() {
                   setSearchResults([]);
                   setSelectedCard(null);
                   setSearchQuery("");
+                  setDuplicateNotice(null);
+                  setBulkQueue([]);
                 }}
                 className="flex items-center gap-3 p-4 rounded-xl bg-card-bg border border-card-border hover:border-accent transition-colors text-left"
               >
@@ -195,7 +297,79 @@ export default function AddCardPage() {
           </button>
           <h1 className="text-2xl font-bold mb-6">
             {isSearchable ? "Search Cards" : "Enter Card Details"}
+            {bulkMode && (
+              <span className="text-sm font-normal text-accent ml-2">Bulk Mode</span>
+            )}
           </h1>
+
+          {/* Bulk queue display */}
+          {bulkMode && bulkQueue.length > 0 && (
+            <div className="rounded-xl bg-card-bg border border-card-border p-4 mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-medium">
+                  Queue ({bulkQueue.length} card{bulkQueue.length !== 1 ? "s" : ""})
+                </h3>
+                <button
+                  onClick={() => setStep("confirm")}
+                  className="text-sm text-accent hover:text-accent-hover font-medium"
+                >
+                  Review & Save →
+                </button>
+              </div>
+              <div className="space-y-2">
+                {bulkQueue.map((item, idx) => (
+                  <div key={idx} className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="truncate">{item.searchResult.name}</span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <select
+                        value={item.owner}
+                        onChange={(e) => {
+                          const updated = [...bulkQueue];
+                          updated[idx].owner = e.target.value as Owner;
+                          setBulkQueue(updated);
+                        }}
+                        className="px-2 py-1 rounded bg-background border border-card-border text-xs"
+                      >
+                        <option value="remy">Remy</option>
+                        <option value="leo">Leo</option>
+                      </select>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => {
+                            const updated = [...bulkQueue];
+                            updated[idx].quantity = Math.max(1, updated[idx].quantity - 1);
+                            setBulkQueue(updated);
+                          }}
+                          className="w-6 h-6 rounded bg-background border border-card-border flex items-center justify-center text-xs"
+                        >
+                          −
+                        </button>
+                        <span className="w-4 text-center text-xs">{item.quantity}</span>
+                        <button
+                          onClick={() => {
+                            const updated = [...bulkQueue];
+                            updated[idx].quantity++;
+                            setBulkQueue(updated);
+                          }}
+                          className="w-6 h-6 rounded bg-background border border-card-border flex items-center justify-center text-xs"
+                        >
+                          +
+                        </button>
+                      </div>
+                      <button
+                        onClick={() => setBulkQueue(bulkQueue.filter((_, i) => i !== idx))}
+                        className="text-muted hover:text-danger text-xs"
+                      >
+                        &times;
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {isSearchable ? (
             <>
@@ -222,10 +396,7 @@ export default function AddCardPage() {
                   {searchResults.map((result) => (
                     <button
                       key={result.external_id}
-                      onClick={() => {
-                        setSelectedCard(result);
-                        setStep("details");
-                      }}
+                      onClick={() => handleSelectCard(result)}
                       className="flex flex-col items-center p-3 rounded-xl bg-card-bg border border-card-border hover:border-accent transition-colors text-center"
                     >
                       {result.image_url && (
@@ -248,6 +419,9 @@ export default function AddCardPage() {
                         <div className="text-xs text-success mt-1">
                           {formatPrice(result.prices[0].price_usd)}
                         </div>
+                      )}
+                      {bulkMode && (
+                        <div className="text-xs text-accent mt-1">+ Add to queue</div>
                       )}
                     </button>
                   ))}
@@ -324,9 +498,26 @@ export default function AddCardPage() {
                 />
               </div>
               <button
-                onClick={() => {
+                onClick={async () => {
                   if (!manualName.trim()) return;
                   setSelectedCard(null);
+                  setDuplicateNotice(null);
+                  // Check for manual card duplicates
+                  if (category) {
+                    try {
+                      const params = new URLSearchParams({
+                        name: manualName.trim(),
+                        category,
+                      });
+                      const res = await fetch(`/api/collection/check-duplicate?${params}`);
+                      const data = await res.json();
+                      if (data.exists) {
+                        setDuplicateNotice({ count: data.count, owners: data.owners });
+                      }
+                    } catch {
+                      // continue
+                    }
+                  }
                   setStep("details");
                 }}
                 disabled={!manualName.trim()}
@@ -340,7 +531,7 @@ export default function AddCardPage() {
       )}
 
       {/* Step 3: Details */}
-      {step === "details" && (
+      {step === "details" && !bulkMode && (
         <div>
           <button
             onClick={() => setStep("search")}
@@ -349,6 +540,26 @@ export default function AddCardPage() {
             ← Back
           </button>
           <h1 className="text-2xl font-bold mb-6">Card Details</h1>
+
+          {/* Duplicate notice */}
+          {duplicateNotice && (
+            <div className="rounded-xl bg-leo/10 border border-leo/30 p-4 mb-6">
+              <div className="text-sm font-medium text-leo">
+                You already have {duplicateNotice.count} of these
+                {duplicateNotice.owners.length > 0 && (
+                  <span>
+                    {" "}
+                    ({duplicateNotice.owners
+                      .map((o) => (o === "remy" ? "Remy" : "Leo") + "'s collection")
+                      .join(", ")})
+                  </span>
+                )}
+              </div>
+              <div className="text-xs text-muted mt-1">
+                Duplicates are fine — just letting you know!
+              </div>
+            </div>
+          )}
 
           {selectedCard && (
             <div className="flex items-center gap-4 mb-6 p-4 rounded-xl bg-card-bg border border-card-border">
@@ -370,7 +581,7 @@ export default function AddCardPage() {
           )}
 
           <div className="space-y-5">
-            {/* Sports card specifics — set, year, card number */}
+            {/* Sports card specifics */}
             {isSportsCategory && selectedCard && (
               <div className="rounded-xl bg-card-bg border border-card-border p-4 space-y-3">
                 <div className="text-sm font-medium text-muted">Card Details</div>
@@ -552,7 +763,6 @@ export default function AddCardPage() {
 
             <button
               onClick={async () => {
-                // For sports cards, fetch eBay estimate with full card details
                 if (isSportsCategory && selectedCard) {
                   setEstimatingPrice(true);
                   try {
@@ -574,7 +784,6 @@ export default function AddCardPage() {
                     });
                     const data = await res.json();
                     if (data.prices?.length > 0) {
-                      // Update selectedCard with fetched prices and eBay listing image
                       setSelectedCard({
                         ...selectedCard,
                         prices: data.prices,
@@ -604,8 +813,8 @@ export default function AddCardPage() {
         </div>
       )}
 
-      {/* Step 4: Confirm */}
-      {step === "confirm" && (
+      {/* Step 4: Confirm (single card) */}
+      {step === "confirm" && !bulkMode && (
         <div>
           <button
             onClick={() => setStep("details")}
@@ -688,6 +897,110 @@ export default function AddCardPage() {
               {saving ? "Saving..." : "Add to Collection"}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Bulk confirm step */}
+      {step === "confirm" && bulkMode && (
+        <div>
+          <button
+            onClick={() => setStep("search")}
+            className="text-sm text-muted hover:text-foreground mb-4 inline-block"
+          >
+            ← Back to Search
+          </button>
+          <h1 className="text-2xl font-bold mb-6">
+            Review & Save All ({bulkQueue.length} cards)
+          </h1>
+
+          {bulkQueue.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-muted">No cards in queue. Go back and add some!</p>
+            </div>
+          ) : (
+            <div className="space-y-3 mb-6">
+              {bulkQueue.map((item, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center gap-3 p-3 rounded-xl bg-card-bg border border-card-border"
+                >
+                  {item.searchResult.image_url && (
+                    <Image
+                      src={item.searchResult.image_url}
+                      alt={item.searchResult.name}
+                      width={40}
+                      height={56}
+                      className="rounded"
+                      unoptimized
+                    />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium truncate">
+                      {item.searchResult.name}
+                    </div>
+                    <div className="text-xs text-muted truncate">
+                      {item.searchResult.set_name}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <select
+                      value={item.owner}
+                      onChange={(e) => {
+                        const updated = [...bulkQueue];
+                        updated[idx].owner = e.target.value as Owner;
+                        setBulkQueue(updated);
+                      }}
+                      className="px-2 py-1 rounded bg-background border border-card-border text-xs"
+                    >
+                      <option value="remy">Remy</option>
+                      <option value="leo">Leo</option>
+                    </select>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => {
+                          const updated = [...bulkQueue];
+                          updated[idx].quantity = Math.max(1, updated[idx].quantity - 1);
+                          setBulkQueue(updated);
+                        }}
+                        className="w-6 h-6 rounded bg-background border border-card-border flex items-center justify-center text-xs"
+                      >
+                        −
+                      </button>
+                      <span className="w-4 text-center text-xs">{item.quantity}</span>
+                      <button
+                        onClick={() => {
+                          const updated = [...bulkQueue];
+                          updated[idx].quantity++;
+                          setBulkQueue(updated);
+                        }}
+                        className="w-6 h-6 rounded bg-background border border-card-border flex items-center justify-center text-xs"
+                      >
+                        +
+                      </button>
+                    </div>
+                    <button
+                      onClick={() => setBulkQueue(bulkQueue.filter((_, i) => i !== idx))}
+                      className="text-muted hover:text-danger text-sm"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {bulkQueue.length > 0 && (
+            <button
+              onClick={handleBulkSave}
+              disabled={bulkSaving}
+              className="w-full py-3 rounded-lg bg-success hover:bg-success/90 text-white font-bold text-lg transition-colors disabled:opacity-50"
+            >
+              {bulkSaving
+                ? "Saving..."
+                : `Save All ${bulkQueue.length} Cards`}
+            </button>
+          )}
         </div>
       )}
     </div>

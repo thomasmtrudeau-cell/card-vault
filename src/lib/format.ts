@@ -26,3 +26,12 @@ export function formatPriceAfterFees(price: number | null | undefined): string {
   if (price == null || price === 0) return "—";
   return formatPrice(afterEbayFees(price));
 }
+
+export function escapeCSV(value: string | number | null | undefined): string {
+  if (value == null) return "";
+  const str = String(value);
+  if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}

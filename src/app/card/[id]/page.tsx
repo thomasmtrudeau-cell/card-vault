@@ -5,8 +5,94 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { getCategoryLabel, getCategoryIcon } from "@/lib/categories";
 import { formatPrice, formatDate, afterEbayFees } from "@/lib/format";
-import { getAveragePrice, getPriceRange } from "@/lib/price-fetcher";
-import type { CollectionItem, PriceCache, CardCategory } from "@/lib/types";
+import { getPriceRange } from "@/lib/price-fetcher";
+import type { CollectionItem, PriceCache, CardCategory, PriceHistoryEntry } from "@/lib/types";
+import EditCardModal from "@/components/EditCardModal";
+import ImageLightbox from "@/components/ImageLightbox";
+
+function PriceSparkline({ history, current }: { history: PriceHistoryEntry[]; current: PriceCache[] }) {
+  // Combine history + current into time series of market prices
+  const points: { time: number; price: number }[] = [];
+
+  for (const h of history) {
+    if (h.price_usd && (h.condition_key === "market" || h.condition_key === "normal_market" || h.condition_key === "holofoil_market")) {
+      points.push({ time: new Date(h.recorded_at).getTime(), price: h.price_usd });
+    }
+  }
+
+  // Add current prices
+  for (const c of current) {
+    if (c.price_usd && (c.condition_key === "market" || c.condition_key === "normal_market" || c.condition_key === "holofoil_market")) {
+      points.push({ time: new Date(c.fetched_at).getTime(), price: c.price_usd });
+    }
+  }
+
+  // Sort by time and deduplicate by day
+  points.sort((a, b) => a.time - b.time);
+  const daily: { time: number; price: number }[] = [];
+  for (const p of points) {
+    const day = Math.floor(p.time / 86400000);
+    const last = daily.length > 0 ? Math.floor(daily[daily.length - 1].time / 86400000) : -1;
+    if (day !== last) {
+      daily.push(p);
+    } else {
+      daily[daily.length - 1] = p;
+    }
+  }
+
+  if (daily.length < 2) return null;
+
+  const prices = daily.map((d) => d.price);
+  const minP = Math.min(...prices);
+  const maxP = Math.max(...prices);
+  const range = maxP - minP || 1;
+
+  const width = 200;
+  const height = 40;
+  const padding = 2;
+
+  const polyPoints = daily
+    .map((d, i) => {
+      const x = padding + (i / (daily.length - 1)) * (width - 2 * padding);
+      const y = height - padding - ((d.price - minP) / range) * (height - 2 * padding);
+      return `${x},${y}`;
+    })
+    .join(" ");
+
+  const firstPrice = prices[0];
+  const lastPrice = prices[prices.length - 1];
+  const pctChange = ((lastPrice - firstPrice) / firstPrice) * 100;
+  const isUp = pctChange >= 0;
+
+  return (
+    <div className="rounded-xl bg-card-bg border border-card-border p-4 mb-4">
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-sm font-medium">90-Day Trend</h3>
+        <span className={`text-sm font-medium ${isUp ? "text-success" : "text-danger"}`}>
+          {isUp ? "+" : ""}{pctChange.toFixed(1)}%
+        </span>
+      </div>
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="w-full"
+        style={{ height: 40 }}
+      >
+        <polyline
+          points={polyPoints}
+          fill="none"
+          stroke={isUp ? "var(--success)" : "var(--danger)"}
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+      <div className="flex justify-between text-xs text-muted mt-1">
+        <span>{formatPrice(firstPrice)}</span>
+        <span>{formatPrice(lastPrice)}</span>
+      </div>
+    </div>
+  );
+}
 
 export default function CardDetailPage({
   params,
@@ -20,6 +106,9 @@ export default function CardDetailPage({
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
+  const [showLightbox, setShowLightbox] = useState(false);
+  const [priceHistory, setPriceHistory] = useState<PriceHistoryEntry[]>([]);
 
   useEffect(() => {
     async function load() {
@@ -31,11 +120,16 @@ export default function CardDetailPage({
       if (found) {
         setItem(found);
         setPrices(found.prices || []);
-        // Also fetch fresh prices
+        // Fetch fresh prices
         if (found.card_id) {
           const priceRes = await fetch(`/api/prices/${found.card_id}`);
           const priceData = await priceRes.json();
           if (priceData.prices) setPrices(priceData.prices);
+
+          // Fetch price history
+          const histRes = await fetch(`/api/price-history/${found.card_id}?days=90`);
+          const histData = await histRes.json();
+          if (histData.history) setPriceHistory(histData.history);
         }
       }
       setLoading(false);
@@ -108,14 +202,16 @@ export default function CardDetailPage({
         {/* Card Image */}
         <div className="flex justify-center">
           {card.image_url ? (
-            <Image
-              src={card.image_url}
-              alt={card.name}
-              width={300}
-              height={420}
-              className="rounded-xl shadow-2xl"
-              unoptimized
-            />
+            <button onClick={() => setShowLightbox(true)} className="cursor-zoom-in">
+              <Image
+                src={card.image_url}
+                alt={card.name}
+                width={300}
+                height={420}
+                className="rounded-xl shadow-2xl hover:scale-[1.02] transition-transform"
+                unoptimized
+              />
+            </button>
           ) : (
             <div className="w-[300px] h-[420px] rounded-xl bg-card-bg border border-card-border flex items-center justify-center">
               <span className="text-6xl">
@@ -163,6 +259,9 @@ export default function CardDetailPage({
               </div>
             )}
           </div>
+
+          {/* Price History Sparkline */}
+          <PriceSparkline history={priceHistory} current={prices} />
 
           {/* Metadata grid */}
           <div className="grid grid-cols-2 gap-3 mb-4">
@@ -250,15 +349,43 @@ export default function CardDetailPage({
           )}
 
           {/* Actions */}
-          <button
-            onClick={handleDelete}
-            disabled={deleting}
-            className="text-sm text-danger hover:text-danger/80 disabled:opacity-50"
-          >
-            {deleting ? "Removing..." : "Remove from Collection"}
-          </button>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setShowEdit(true)}
+              className="text-sm text-accent hover:text-accent-hover"
+            >
+              Edit Card
+            </button>
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="text-sm text-danger hover:text-danger/80 disabled:opacity-50"
+            >
+              {deleting ? "Removing..." : "Remove from Collection"}
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Modals */}
+      {showEdit && (
+        <EditCardModal
+          item={item}
+          onClose={() => setShowEdit(false)}
+          onSaved={(updated) => {
+            setItem(updated);
+            setShowEdit(false);
+          }}
+        />
+      )}
+
+      {showLightbox && card.image_url && (
+        <ImageLightbox
+          src={card.image_url}
+          alt={card.name}
+          onClose={() => setShowLightbox(false)}
+        />
+      )}
     </div>
   );
 }

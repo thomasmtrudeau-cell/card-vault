@@ -72,6 +72,40 @@ export interface SearchResult {
   prices?: { source: PriceSource; price_usd: number; condition_key: string }[];
 }
 
+export interface PriceHistoryEntry {
+  id: string;
+  card_id: string;
+  source: string;
+  price_usd: number | null;
+  condition_key: string | null;
+  recorded_at: string;
+}
+
+export interface WishlistItem {
+  id: string;
+  owner: Owner;
+  category: string;
+  name: string;
+  set_name: string | null;
+  card_number: string | null;
+  year: number | null;
+  notes: string | null;
+  target_price: number | null;
+  image_url: string | null;
+  external_id: string | null;
+  external_source: string | null;
+  created_at: string;
+}
+
+export interface ShareLink {
+  id: string;
+  share_token: string;
+  owner_filter: string | null;
+  category_filter: string | null;
+  created_at: string;
+  expires_at: string | null;
+}
+
 // Supabase Database type
 export interface Database {
   public: {

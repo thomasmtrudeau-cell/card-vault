@@ -5,8 +5,10 @@ import Link from "next/link";
 import Image from "next/image";
 import { getCategoryIcon, getCategoryLabel } from "@/lib/categories";
 import { formatPrice, afterEbayFees } from "@/lib/format";
-import { getAveragePrice, getPriceRange } from "@/lib/price-fetcher";
+import { getPriceRange } from "@/lib/price-fetcher";
 import type { CollectionItem, CardCategory } from "@/lib/types";
+import AnimatedCounter from "@/components/AnimatedCounter";
+import EmptyPlaceholder from "@/components/EmptyPlaceholder";
 
 const SPORTS_CATS: CardCategory[] = [
   "baseball",
@@ -121,9 +123,104 @@ function computeStats(items: CollectionItem[]): Stats {
   };
 }
 
+function ShareModal({ onClose }: { onClose: () => void }) {
+  const [filter, setFilter] = useState<"all" | "remy" | "leo">("all");
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const handleCreate = async () => {
+    setCreating(true);
+    try {
+      const res = await fetch("/api/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          owner_filter: filter === "all" ? null : filter,
+        }),
+      });
+      const data = await res.json();
+      if (data.link) {
+        const url = `${window.location.origin}/share/${data.link.share_token}`;
+        setShareUrl(url);
+      }
+    } catch {
+      alert("Failed to create share link.");
+    }
+    setCreating(false);
+  };
+
+  const handleCopy = () => {
+    if (shareUrl) {
+      navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="w-full max-w-sm rounded-2xl bg-card-bg border border-card-border p-6">
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-lg font-bold">Share Collection</h2>
+          <button onClick={onClose} className="text-muted hover:text-foreground text-xl">
+            &times;
+          </button>
+        </div>
+
+        {!shareUrl ? (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm text-muted mb-2">What to share</label>
+              <div className="flex gap-2">
+                {(["all", "remy", "leo"] as const).map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setFilter(f)}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium text-center transition-colors ${
+                      filter === f
+                        ? "bg-accent text-white"
+                        : "bg-background border border-card-border text-muted"
+                    }`}
+                  >
+                    {f === "all" ? "Everyone" : f === "remy" ? "Remy" : "Leo"}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <button
+              onClick={handleCreate}
+              disabled={creating}
+              className="w-full py-3 rounded-lg bg-accent hover:bg-accent-hover text-white font-medium transition-colors disabled:opacity-50"
+            >
+              {creating ? "Creating..." : "Create Share Link"}
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="p-3 rounded-lg bg-background border border-card-border text-sm break-all">
+              {shareUrl}
+            </div>
+            <button
+              onClick={handleCopy}
+              className="w-full py-3 rounded-lg bg-accent hover:bg-accent-hover text-white font-medium transition-colors"
+            >
+              {copied ? "Copied!" : "Copy to Clipboard"}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [items, setItems] = useState<CollectionItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showShare, setShowShare] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -152,12 +249,22 @@ export default function Dashboard() {
             Remy & Leo&apos;s Card Collection
           </p>
         </div>
-        <Link
-          href="/add"
-          className="px-6 py-3 rounded-xl bg-accent hover:bg-accent-hover text-white font-medium text-lg transition-colors shadow-lg shadow-accent/20"
-        >
-          + Add Card
-        </Link>
+        <div className="flex items-center gap-3">
+          {items.length > 0 && (
+            <button
+              onClick={() => setShowShare(true)}
+              className="px-4 py-3 rounded-xl bg-card-bg border border-card-border hover:border-accent text-sm font-medium transition-colors"
+            >
+              Share
+            </button>
+          )}
+          <Link
+            href="/add"
+            className="px-6 py-3 rounded-xl bg-accent hover:bg-accent-hover text-white font-medium text-lg transition-colors shadow-lg shadow-accent/20"
+          >
+            + Add Card
+          </Link>
+        </div>
       </div>
 
       {items.length === 0 ? (
@@ -181,7 +288,7 @@ export default function Dashboard() {
           <div className="rounded-2xl bg-card-bg border border-card-border p-6 mb-6">
             <div className="text-sm text-muted mb-1">Total Collection Value</div>
             <div className="text-4xl font-bold text-success">
-              {formatPrice(stats.totalValue)}
+              <AnimatedCounter value={stats.totalValue} prefix="$" />
             </div>
             <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-muted">
               <span>Range: {formatPrice(stats.totalLow)} – {formatPrice(stats.totalHigh)}</span>
@@ -220,7 +327,7 @@ export default function Dashboard() {
           {/* Category Value Breakdown */}
           <div className="grid md:grid-cols-2 gap-4 mb-6">
             {/* Sports Cards */}
-            {stats.sportsTotal > 0 && (
+            {stats.sportsTotal > 0 ? (
               <div className="rounded-2xl bg-card-bg border border-card-border p-5">
                 <div className="flex items-center justify-between mb-3">
                   <h2 className="text-sm font-bold uppercase tracking-wide text-muted">Sports Cards</h2>
@@ -242,16 +349,16 @@ export default function Dashboard() {
                       </div>
                     ))}
                 </div>
-                {stats.sportsTotal > 0 && (
-                  <div className="text-xs text-muted mt-3 pt-3 border-t border-card-border">
-                    Net after fees: {formatPrice(afterEbayFees(stats.sportsTotal))}
-                  </div>
-                )}
+                <div className="text-xs text-muted mt-3 pt-3 border-t border-card-border">
+                  Net after fees: {formatPrice(afterEbayFees(stats.sportsTotal))}
+                </div>
               </div>
+            ) : (
+              <EmptyPlaceholder type="sports" />
             )}
 
             {/* TCG Cards */}
-            {stats.tcgTotal > 0 && (
+            {stats.tcgTotal > 0 ? (
               <div className="rounded-2xl bg-card-bg border border-card-border p-5">
                 <div className="flex items-center justify-between mb-3">
                   <h2 className="text-sm font-bold uppercase tracking-wide text-muted">TCG Cards</h2>
@@ -273,12 +380,12 @@ export default function Dashboard() {
                       </div>
                     ))}
                 </div>
-                {stats.tcgTotal > 0 && (
-                  <div className="text-xs text-muted mt-3 pt-3 border-t border-card-border">
-                    Net after fees: {formatPrice(afterEbayFees(stats.tcgTotal))}
-                  </div>
-                )}
+                <div className="text-xs text-muted mt-3 pt-3 border-t border-card-border">
+                  Net after fees: {formatPrice(afterEbayFees(stats.tcgTotal))}
+                </div>
               </div>
+            ) : (
+              <EmptyPlaceholder type="tcg" />
             )}
           </div>
 
@@ -286,7 +393,9 @@ export default function Dashboard() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <div className="rounded-xl bg-card-bg border border-card-border p-4">
               <div className="text-xs text-muted">Total Cards</div>
-              <div className="text-2xl font-bold">{stats.totalCards}</div>
+              <div className="text-2xl font-bold">
+                <AnimatedCounter value={stats.totalCards} />
+              </div>
             </div>
             <div className="rounded-xl bg-card-bg border border-card-border p-4">
               <div className="text-xs text-muted">Most Valuable</div>
@@ -390,6 +499,8 @@ export default function Dashboard() {
           </div>
         </>
       )}
+
+      {showShare && <ShareModal onClose={() => setShowShare(false)} />}
     </div>
   );
 }

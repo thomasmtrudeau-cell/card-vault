@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { CATEGORIES } from "@/lib/categories";
 import { getCategoryIcon } from "@/lib/categories";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, escapeCSV, formatDate } from "@/lib/format";
 import { getAveragePrice, getPriceRange } from "@/lib/price-fetcher";
 import type { CollectionItem, CardCategory, Owner } from "@/lib/types";
 
@@ -19,6 +19,7 @@ export default function CollectionPage() {
     "all"
   );
   const [sortBy, setSortBy] = useState<SortKey>("date");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const fetchCollection = useCallback(async () => {
     setLoading(true);
@@ -35,7 +36,23 @@ export default function CollectionPage() {
     fetchCollection();
   }, [fetchCollection]);
 
-  const sorted = [...items].sort((a, b) => {
+  // Client-side search filter
+  const filtered = useMemo(() => {
+    if (!searchQuery.trim()) return items;
+    const q = searchQuery.toLowerCase();
+    return items.filter((item) => {
+      const card = item.card;
+      if (!card) return false;
+      return (
+        card.name.toLowerCase().includes(q) ||
+        (card.set_name && card.set_name.toLowerCase().includes(q)) ||
+        (card.card_number && card.card_number.toLowerCase().includes(q)) ||
+        (item.notes && item.notes.toLowerCase().includes(q))
+      );
+    });
+  }, [items, searchQuery]);
+
+  const sorted = [...filtered].sort((a, b) => {
     switch (sortBy) {
       case "value_high": {
         const va = getAveragePrice(a.prices || []) || 0;
@@ -59,20 +76,88 @@ export default function CollectionPage() {
     }
   });
 
+  const exportCSV = () => {
+    const headers = [
+      "Name",
+      "Set",
+      "Card #",
+      "Year",
+      "Category",
+      "Owner",
+      "Condition",
+      "Grade",
+      "Qty",
+      "Market Price",
+      "Low Price",
+      "High Price",
+      "Date Added",
+    ];
+
+    const rows = sorted.map((item) => {
+      const range = getPriceRange(item.prices || []);
+      return [
+        escapeCSV(item.card?.name),
+        escapeCSV(item.card?.set_name),
+        escapeCSV(item.card?.card_number),
+        escapeCSV(item.card?.year),
+        escapeCSV(item.card?.category),
+        escapeCSV(item.owner),
+        escapeCSV(
+          item.condition === "graded"
+            ? `${item.grading_company} ${item.grade}`
+            : "Raw"
+        ),
+        escapeCSV(item.grade),
+        escapeCSV(item.quantity),
+        escapeCSV(range.market),
+        escapeCSV(range.low),
+        escapeCSV(range.high),
+        escapeCSV(formatDate(item.date_added)),
+      ].join(",");
+    });
+
+    const csv = [headers.join(","), ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const date = new Date().toISOString().slice(0, 10);
+    a.download = `card-vault-collection-${date}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="p-4 md:p-8 max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Collection</h1>
-        <Link
-          href="/add"
-          className="px-4 py-2 rounded-lg bg-accent hover:bg-accent-hover text-white text-sm font-medium transition-colors"
-        >
-          + Add Card
-        </Link>
+        <div className="flex items-center gap-2">
+          {items.length > 0 && (
+            <button
+              onClick={exportCSV}
+              className="px-4 py-2 rounded-lg bg-card-bg border border-card-border hover:border-accent text-sm font-medium transition-colors"
+            >
+              Export CSV
+            </button>
+          )}
+          <Link
+            href="/add"
+            className="px-4 py-2 rounded-lg bg-accent hover:bg-accent-hover text-white text-sm font-medium transition-colors"
+          >
+            + Add Card
+          </Link>
+        </div>
       </div>
 
-      {/* Filters */}
+      {/* Search + Filters */}
       <div className="flex flex-wrap gap-3 mb-6">
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search collection..."
+          className="flex-1 min-w-[200px] px-3 py-2 rounded-lg bg-card-bg border border-card-border text-sm focus:outline-none focus:border-accent"
+        />
         <select
           value={ownerFilter}
           onChange={(e) => setOwnerFilter(e.target.value as Owner | "all")}
@@ -109,20 +194,34 @@ export default function CollectionPage() {
         </select>
       </div>
 
+      {searchQuery && (
+        <div className="text-sm text-muted mb-4">
+          {sorted.length} result{sorted.length !== 1 ? "s" : ""} for &quot;{searchQuery}&quot;
+        </div>
+      )}
+
       {/* Results */}
       {loading ? (
         <div className="text-center py-16 text-muted">Loading collection...</div>
       ) : sorted.length === 0 ? (
         <div className="text-center py-16">
           <div className="text-4xl mb-3">🃏</div>
-          <h2 className="text-lg font-medium mb-2">No cards yet</h2>
-          <p className="text-muted mb-4">Start building your collection!</p>
-          <Link
-            href="/add"
-            className="inline-block px-6 py-3 rounded-lg bg-accent hover:bg-accent-hover text-white font-medium transition-colors"
-          >
-            Add Your First Card
-          </Link>
+          <h2 className="text-lg font-medium mb-2">
+            {searchQuery ? "No cards match your search" : "No cards yet"}
+          </h2>
+          <p className="text-muted mb-4">
+            {searchQuery
+              ? "Try a different search term."
+              : "Start building your collection!"}
+          </p>
+          {!searchQuery && (
+            <Link
+              href="/add"
+              className="inline-block px-6 py-3 rounded-lg bg-accent hover:bg-accent-hover text-white font-medium transition-colors"
+            >
+              Add Your First Card
+            </Link>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">

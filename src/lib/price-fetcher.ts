@@ -36,8 +36,22 @@ export async function getPricesWithRefresh(
 
   const freshPrices = await fetchPricesFromSource(card as Card);
 
-  // Clear old prices and insert fresh ones
+  // Archive old prices to history before overwriting
   if (freshPrices.length > 0) {
+    const { data: oldPrices } = await supabase
+      .from("price_cache")
+      .select("card_id, source, price_usd, condition_key")
+      .eq("card_id", cardId);
+    if (oldPrices && oldPrices.length > 0) {
+      await supabase.from("price_history").insert(
+        oldPrices.map((p: { card_id: string; source: string; price_usd: number | null; condition_key: string | null }) => ({
+          card_id: p.card_id,
+          source: p.source,
+          price_usd: p.price_usd,
+          condition_key: p.condition_key,
+        }))
+      );
+    }
     await supabase.from("price_cache").delete().eq("card_id", cardId);
     await supabase.from("price_cache").insert(freshPrices);
   }
