@@ -829,6 +829,11 @@ export default function AddCardPage() {
                 <div className="font-medium text-success">
                   {formatPrice(estimatedValue)}
                 </div>
+                {sportsEstimate !== null && (
+                  <div className="text-xs text-muted mt-1">
+                    eBay BIN minus 15% — sellers list high
+                  </div>
+                )}
               </div>
             </div>
 

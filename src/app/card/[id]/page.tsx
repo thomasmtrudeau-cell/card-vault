@@ -238,6 +238,11 @@ export default function CardDetailPage({
             <div className="text-3xl font-bold text-success">
               {formatPrice(avgPrice)}
             </div>
+            {card.external_source === "thesportsdb" && avgPrice && avgPrice > 0 && (
+              <div className="text-xs text-muted mt-1">
+                Based on lowest eBay BIN listings, discounted 15% since sellers tend to list high
+              </div>
+            )}
             {range.low && range.high && range.low !== range.high && (
               <div className="text-sm text-muted mt-1">
                 Range: {formatPrice(range.low)} – {formatPrice(range.high)}
