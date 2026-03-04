@@ -12,9 +12,15 @@ export async function getCachedPrices(cardId: string): Promise<PriceCache[]> {
   return (data as PriceCache[]) || [];
 }
 
+export interface RefreshContext {
+  gradingCompany?: string;
+  grade?: number | string;
+}
+
 export async function getPricesWithRefresh(
   cardId: string,
-  force = false
+  force = false,
+  context?: RefreshContext
 ): Promise<PriceCache[]> {
   if (!force) {
     const cached = await getCachedPrices(cardId);
@@ -34,7 +40,7 @@ export async function getPricesWithRefresh(
     .single();
   if (!card) return [];
 
-  const freshPrices = await fetchPricesFromSource(card as Card);
+  const freshPrices = await fetchPricesFromSource(card as Card, context);
 
   // Archive old prices to history before overwriting
   if (freshPrices.length > 0) {
@@ -60,7 +66,8 @@ export async function getPricesWithRefresh(
 }
 
 async function fetchPricesFromSource(
-  card: Card
+  card: Card,
+  context?: RefreshContext
 ): Promise<Omit<PriceCache, "id" | "fetched_at">[]> {
   switch (card.external_source) {
     case "pokemontcg":
@@ -70,7 +77,7 @@ async function fetchPricesFromSource(
     case "ygoprodeck":
       return fetchYugiohPrices(card);
     case "thesportsdb":
-      return fetchEbaySportsPrice(card);
+      return fetchEbaySportsPrice(card, context);
     default:
       return [];
   }
@@ -164,7 +171,8 @@ async function fetchYugiohPrices(
 
 // eBay Browse API pricing for sports cards (refresh)
 async function fetchEbaySportsPrice(
-  card: Card
+  card: Card,
+  context?: RefreshContext
 ): Promise<Omit<PriceCache, "id" | "fetched_at">[]> {
   const clientId = process.env.EBAY_CLIENT_ID;
   const clientSecret = process.env.EBAY_CLIENT_SECRET;
@@ -186,11 +194,17 @@ async function fetchEbaySportsPrice(
     const tokenData = await tokenRes.json();
 
     // Build a specific search query from card details
-    const parts = [card.name];
-    if (card.set_name) parts.push(card.set_name);
-    if (card.card_number) parts.push(`#${card.card_number}`);
+    const parts: string[] = [];
     if (card.year) parts.push(String(card.year));
-    parts.push("card");
+    if (card.set_name) parts.push(card.set_name);
+    parts.push(card.name);
+    if (card.card_number) parts.push(`#${card.card_number}`);
+    if (card.rarity) parts.push(card.rarity);
+    if (context?.gradingCompany) {
+      parts.push(String(context.gradingCompany));
+      if (context.grade) parts.push(String(context.grade));
+    }
+    if (!card.set_name) parts.push("card");
 
     const browseRes = await fetch(
       `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(parts.join(" "))}&category_ids=261328&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US&sort=price&limit=25`,

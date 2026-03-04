@@ -144,7 +144,11 @@ export default function CardDetailPage({
       const res = await fetch("/api/prices/refresh", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cardId: item.card_id }),
+        body: JSON.stringify({
+          cardId: item.card_id,
+          gradingCompany: item.condition === "graded" ? item.grading_company : undefined,
+          grade: item.condition === "graded" ? item.grade : undefined,
+        }),
       });
       const data = await res.json();
       if (data.prices) setPrices(data.prices);
