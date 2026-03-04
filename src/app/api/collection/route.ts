@@ -97,15 +97,50 @@ export async function POST(request: NextRequest) {
     let cardId: string;
 
     if (searchResult) {
-      const { data: existing } = await supabase
-        .from("cards")
-        .select("id")
-        .eq("external_id", searchResult.external_id)
-        .eq("external_source", searchResult.external_source)
-        .single();
+      // For sports cards (thesportsdb), the external_id is a player ID, not
+      // card-specific. Different cards of the same player have different
+      // set_name/card_number/year/rarity, so we must include those in the
+      // dedup check to avoid merging distinct cards into one row.
+      let existing: { id: string } | null = null;
+
+      if (searchResult.external_source === "thesportsdb") {
+        // Match on player ID + card-specific details
+        let q = supabase
+          .from("cards")
+          .select("id")
+          .eq("external_id", searchResult.external_id)
+          .eq("external_source", searchResult.external_source);
+
+        if (searchResult.set_name) {
+          q = q.eq("set_name", searchResult.set_name);
+        } else {
+          q = q.is("set_name", null);
+        }
+        if (searchResult.card_number) {
+          q = q.eq("card_number", searchResult.card_number);
+        } else {
+          q = q.is("card_number", null);
+        }
+        if (searchResult.year) {
+          q = q.eq("year", searchResult.year);
+        } else {
+          q = q.is("year", null);
+        }
+
+        const { data } = await q.single();
+        existing = data as { id: string } | null;
+      } else {
+        const { data } = await supabase
+          .from("cards")
+          .select("id")
+          .eq("external_id", searchResult.external_id)
+          .eq("external_source", searchResult.external_source)
+          .single();
+        existing = data as { id: string } | null;
+      }
 
       if (existing) {
-        cardId = (existing as { id: string }).id;
+        cardId = existing.id;
       } else {
         const { data: newCard, error: cardError } = await supabase
           .from("cards")
