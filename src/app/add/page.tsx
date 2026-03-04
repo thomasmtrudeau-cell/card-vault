@@ -31,6 +31,8 @@ export default function AddCardPage() {
   const [quantity, setQuantity] = useState(1);
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  const [estimatingPrice, setEstimatingPrice] = useState(false);
+  const [sportsEstimate, setSportsEstimate] = useState<number | null>(null);
 
   // Manual/sports entry fields
   const [manualName, setManualName] = useState("");
@@ -109,18 +111,20 @@ export default function AddCardPage() {
     setSaving(false);
   };
 
-  const estimatedValue = selectedCard?.prices
-    ? getAveragePrice(
-        selectedCard.prices.map((p) => ({
-          id: "",
-          card_id: "",
-          fetched_at: "",
-          source: p.source,
-          price_usd: p.price_usd,
-          condition_key: p.condition_key,
-        }))
-      )
-    : null;
+  const estimatedValue =
+    sportsEstimate ??
+    (selectedCard?.prices
+      ? getAveragePrice(
+          selectedCard.prices.map((p) => ({
+            id: "",
+            card_id: "",
+            fetched_at: "",
+            source: p.source,
+            price_usd: p.price_usd,
+            condition_key: p.condition_key,
+          }))
+        )
+      : null);
 
   return (
     <div className="max-w-2xl mx-auto p-4 md:p-8">
@@ -547,10 +551,51 @@ export default function AddCardPage() {
             </div>
 
             <button
-              onClick={() => setStep("confirm")}
-              className="w-full py-3 rounded-lg bg-accent hover:bg-accent-hover text-white font-medium transition-colors"
+              onClick={async () => {
+                // For sports cards, fetch eBay estimate with full card details
+                if (isSportsCategory && selectedCard) {
+                  setEstimatingPrice(true);
+                  try {
+                    const res = await fetch("/api/prices/estimate", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        playerName: selectedCard.name,
+                        setName: manualSet || null,
+                        year: manualYear || null,
+                        cardNumber: manualNumber || null,
+                        parallel: manualRarity || null,
+                        category,
+                        condition,
+                        gradingCompany:
+                          condition === "graded" ? gradingCompany : null,
+                        grade: condition === "graded" ? grade : null,
+                      }),
+                    });
+                    const data = await res.json();
+                    if (data.prices?.length > 0) {
+                      // Update selectedCard with fetched prices
+                      setSelectedCard({
+                        ...selectedCard,
+                        prices: data.prices,
+                      });
+                      const market = data.prices.find(
+                        (p: { condition_key: string }) =>
+                          p.condition_key === "market"
+                      );
+                      setSportsEstimate(market?.price_usd || null);
+                    }
+                  } catch {
+                    // Continue without estimate
+                  }
+                  setEstimatingPrice(false);
+                }
+                setStep("confirm");
+              }}
+              disabled={estimatingPrice}
+              className="w-full py-3 rounded-lg bg-accent hover:bg-accent-hover text-white font-medium transition-colors disabled:opacity-50"
             >
-              Review & Save
+              {estimatingPrice ? "Estimating price..." : "Review & Save"}
             </button>
           </div>
         </div>

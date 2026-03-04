@@ -224,27 +224,19 @@ async function searchSportsPlayer(
     })
     .slice(0, 10);
 
-  // Try to get eBay pricing estimates for each player
-  const results: SearchResult[] = [];
-
-  for (const player of players) {
-    const prices = await fetchEbayEstimate(player.strPlayer, category);
-
-    results.push({
-      external_id: `sportsdb_${player.idPlayer}`,
-      external_source: "thesportsdb",
-      name: player.strPlayer,
-      set_name: player.strTeam,
-      card_number: null,
-      year: null,
-      rarity: player.strPosition,
-      image_url: player.strCutout || player.strThumb || null,
-      category,
-      prices,
-    });
-  }
-
-  return results;
+  // Return players without prices — prices fetched later with full card details
+  return players.map((player) => ({
+    external_id: `sportsdb_${player.idPlayer}`,
+    external_source: "thesportsdb",
+    name: player.strPlayer,
+    set_name: player.strTeam,
+    card_number: null,
+    year: null,
+    rarity: player.strPosition,
+    image_url: player.strCutout || player.strThumb || null,
+    category,
+    prices: [],
+  }));
 }
 
 // eBay Browse API for sports card pricing estimates
