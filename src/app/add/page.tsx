@@ -574,10 +574,13 @@ export default function AddCardPage() {
                     });
                     const data = await res.json();
                     if (data.prices?.length > 0) {
-                      // Update selectedCard with fetched prices
+                      // Update selectedCard with fetched prices and eBay listing image
                       setSelectedCard({
                         ...selectedCard,
                         prices: data.prices,
+                        ...(data.listingImageUrl
+                          ? { image_url: data.listingImageUrl }
+                          : {}),
                       });
                       const market = data.prices.find(
                         (p: { condition_key: string }) =>

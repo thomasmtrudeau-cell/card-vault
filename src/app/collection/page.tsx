@@ -6,7 +6,7 @@ import Link from "next/link";
 import { CATEGORIES } from "@/lib/categories";
 import { getCategoryIcon } from "@/lib/categories";
 import { formatPrice } from "@/lib/format";
-import { getAveragePrice } from "@/lib/price-fetcher";
+import { getAveragePrice, getPriceRange } from "@/lib/price-fetcher";
 import type { CollectionItem, CardCategory, Owner } from "@/lib/types";
 
 type SortKey = "date" | "value_high" | "value_low" | "name" | "grade";
@@ -127,7 +127,7 @@ export default function CollectionPage() {
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
           {sorted.map((item) => {
-            const avgPrice = getAveragePrice(item.prices || []);
+            const range = getPriceRange(item.prices || []);
             return (
               <Link
                 href={`/card/${item.id}`}
@@ -168,9 +168,16 @@ export default function CollectionPage() {
                     >
                       {item.owner === "remy" ? "Remy" : "Leo"}
                     </span>
-                    <span className="text-xs text-success font-medium">
-                      {formatPrice(avgPrice)}
-                    </span>
+                    <div className="text-right">
+                      <div className="text-xs text-success font-medium">
+                        {formatPrice(range.market)}
+                      </div>
+                      {range.low && range.high && range.low !== range.high && (
+                        <div className="text-[10px] text-muted leading-tight">
+                          {formatPrice(range.low)}–{formatPrice(range.high)}
+                        </div>
+                      )}
+                    </div>
                   </div>
                   {item.condition === "graded" && (
                     <div className="text-xs text-muted mt-1">

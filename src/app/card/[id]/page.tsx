@@ -4,8 +4,8 @@ import { useState, useEffect, use } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { getCategoryLabel, getCategoryIcon } from "@/lib/categories";
-import { formatPrice, formatDate } from "@/lib/format";
-import { getAveragePrice } from "@/lib/price-fetcher";
+import { formatPrice, formatDate, afterEbayFees } from "@/lib/format";
+import { getAveragePrice, getPriceRange } from "@/lib/price-fetcher";
 import type { CollectionItem, PriceCache, CardCategory } from "@/lib/types";
 
 export default function CardDetailPage({
@@ -92,7 +92,8 @@ export default function CardDetailPage({
   }
 
   const card = item.card;
-  const avgPrice = getAveragePrice(prices);
+  const range = getPriceRange(prices);
+  const avgPrice = range.market;
 
   return (
     <div className="max-w-3xl mx-auto p-4 md:p-8">
@@ -141,12 +142,26 @@ export default function CardDetailPage({
             <p className="text-muted mb-4">{card.set_name}</p>
           )}
 
-          {/* Estimated Value */}
+          {/* Estimated Value with Range */}
           <div className="rounded-xl bg-card-bg border border-card-border p-4 mb-4">
             <div className="text-sm text-muted">Estimated Value</div>
             <div className="text-3xl font-bold text-success">
               {formatPrice(avgPrice)}
             </div>
+            {range.low && range.high && range.low !== range.high && (
+              <div className="text-sm text-muted mt-1">
+                Range: {formatPrice(range.low)} – {formatPrice(range.high)}
+              </div>
+            )}
+            {avgPrice && avgPrice > 0 && (
+              <div className="mt-3 pt-3 border-t border-card-border">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted">If sold on eBay</span>
+                  <span className="font-medium">{formatPrice(afterEbayFees(avgPrice))}</span>
+                </div>
+                <div className="text-xs text-muted text-right">after 13.25% seller fees</div>
+              </div>
+            )}
           </div>
 
           {/* Metadata grid */}

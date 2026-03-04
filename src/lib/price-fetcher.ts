@@ -215,6 +215,19 @@ async function fetchEbaySportsPrice(
   }
 }
 
+export interface PriceRange {
+  low: number | null;
+  market: number | null;
+  high: number | null;
+}
+
+export function getPriceRange(prices: PriceCache[]): PriceRange {
+  const low = prices.find((p) => p.condition_key === "low")?.price_usd ?? null;
+  const high = prices.find((p) => p.condition_key === "high")?.price_usd ?? null;
+  const market = getAveragePrice(prices);
+  return { low, market, high };
+}
+
 export function getAveragePrice(prices: PriceCache[]): number | null {
   const marketPrices = prices.filter(
     (p) =>

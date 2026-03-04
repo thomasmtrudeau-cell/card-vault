@@ -10,6 +10,7 @@ const nextConfig: NextConfig = {
       { hostname: "images.ygoprodeck.com" },
       { hostname: "r2.thesportsdb.com" },
       { hostname: "www.thesportsdb.com" },
+      { hostname: "i.ebayimg.com" },
     ],
   },
 };

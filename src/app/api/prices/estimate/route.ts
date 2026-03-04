@@ -77,6 +77,13 @@ export async function POST(request: NextRequest) {
     const browseData = await browseRes.json();
 
     const listings = browseData.itemSummaries || [];
+
+    // Grab the first listing's image as a representative card image
+    const listingImageUrl =
+      listings.find(
+        (item: { image?: { imageUrl?: string } }) => item.image?.imageUrl
+      )?.image?.imageUrl || null;
+
     const listingPrices: number[] = listings
       .map(
         (item: { price?: { value?: string } }) =>
@@ -105,6 +112,7 @@ export async function POST(request: NextRequest) {
       ],
       query,
       listingCount: listings.length,
+      listingImageUrl,
     });
   } catch {
     return NextResponse.json({ prices: [] });
