@@ -9,7 +9,6 @@ import { getAveragePrice } from "@/lib/price-fetcher";
 import type {
   CardCategory,
   SearchResult,
-  Owner,
   Condition,
   GradingCompany,
 } from "@/lib/types";
@@ -18,7 +17,6 @@ type Step = "category" | "search" | "details" | "confirm";
 
 interface BulkQueueItem {
   searchResult: SearchResult;
-  owner: Owner;
   quantity: number;
 }
 
@@ -30,7 +28,7 @@ export default function AddCardPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
-  const [owner, setOwner] = useState<Owner>("remy");
+  const owner = "remy"; // shared collection, owner hidden from UI
   const [condition, setCondition] = useState<Condition>("raw");
   const [gradingCompany, setGradingCompany] = useState<GradingCompany>("PSA");
   const [grade, setGrade] = useState<string>("10");
@@ -111,7 +109,7 @@ export default function AddCardPage() {
       // In bulk mode, add to queue immediately
       setBulkQueue((prev) => [
         ...prev,
-        { searchResult: result, owner: "remy", quantity: 1 },
+        { searchResult: result, quantity: 1 },
       ]);
       return;
     }
@@ -176,7 +174,7 @@ export default function AddCardPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             searchResult: item.searchResult,
-            owner: item.owner,
+            owner: "remy",
             condition: "raw",
             quantity: item.quantity,
             notes: null,
@@ -323,18 +321,6 @@ export default function AddCardPage() {
                       <span className="truncate">{item.searchResult.name}</span>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      <select
-                        value={item.owner}
-                        onChange={(e) => {
-                          const updated = [...bulkQueue];
-                          updated[idx].owner = e.target.value as Owner;
-                          setBulkQueue(updated);
-                        }}
-                        className="px-2 py-1 rounded bg-background border border-card-border text-xs"
-                      >
-                        <option value="remy">Remy</option>
-                        <option value="leo">Leo</option>
-                      </select>
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => {
@@ -630,35 +616,6 @@ export default function AddCardPage() {
               </div>
             )}
 
-            {/* Owner */}
-            <div>
-              <label className="block text-sm text-muted mb-2">
-                Whose card is this?
-              </label>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setOwner("remy")}
-                  className={`flex-1 py-3 rounded-lg font-medium text-center transition-colors ${
-                    owner === "remy"
-                      ? "bg-remy text-white"
-                      : "bg-card-bg border border-card-border text-muted hover:text-foreground"
-                  }`}
-                >
-                  Remy
-                </button>
-                <button
-                  onClick={() => setOwner("leo")}
-                  className={`flex-1 py-3 rounded-lg font-medium text-center transition-colors ${
-                    owner === "leo"
-                      ? "bg-leo text-white"
-                      : "bg-card-bg border border-card-border text-muted hover:text-foreground"
-                  }`}
-                >
-                  Leo
-                </button>
-              </div>
-            </div>
-
             {/* Condition */}
             <div>
               <label className="block text-sm text-muted mb-2">
@@ -854,15 +811,7 @@ export default function AddCardPage() {
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div className="bg-background rounded-lg p-3">
-                <div className="text-muted">Owner</div>
-                <div
-                  className={`font-medium ${owner === "remy" ? "text-remy" : "text-leo"}`}
-                >
-                  {owner === "remy" ? "Remy" : "Leo"}
-                </div>
-              </div>
+            <div className="grid grid-cols-3 gap-3 text-sm">
               <div className="bg-background rounded-lg p-3">
                 <div className="text-muted">Condition</div>
                 <div className="font-medium">
@@ -943,18 +892,6 @@ export default function AddCardPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <select
-                      value={item.owner}
-                      onChange={(e) => {
-                        const updated = [...bulkQueue];
-                        updated[idx].owner = e.target.value as Owner;
-                        setBulkQueue(updated);
-                      }}
-                      className="px-2 py-1 rounded bg-background border border-card-border text-xs"
-                    >
-                      <option value="remy">Remy</option>
-                      <option value="leo">Leo</option>
-                    </select>
                     <div className="flex items-center gap-1">
                       <button
                         onClick={() => {

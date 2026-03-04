@@ -223,16 +223,6 @@ export default function CardDetailPage({
 
         {/* Details */}
         <div>
-          <div
-            className={`inline-block text-xs font-medium px-2 py-1 rounded mb-3 ${
-              item.owner === "remy"
-                ? "bg-remy/20 text-remy"
-                : "bg-leo/20 text-leo"
-            }`}
-          >
-            {item.owner === "remy" ? "Remy" : "Leo"}&apos;s Card
-          </div>
-
           <h1 className="text-2xl font-bold mb-1">{card.name}</h1>
           {card.set_name && (
             <p className="text-muted mb-4">{card.set_name}</p>

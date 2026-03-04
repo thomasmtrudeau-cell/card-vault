@@ -5,16 +5,14 @@ import Image from "next/image";
 import { CATEGORIES } from "@/lib/categories";
 import { getCategoryIcon } from "@/lib/categories";
 import { formatPrice } from "@/lib/format";
-import type { WishlistItem, Owner, CardCategory } from "@/lib/types";
+import type { WishlistItem, CardCategory } from "@/lib/types";
 
 export default function WishlistPage() {
   const [items, setItems] = useState<WishlistItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [ownerFilter, setOwnerFilter] = useState<Owner | "all">("all");
   const [showAdd, setShowAdd] = useState(false);
 
   // Add form state
-  const [addOwner, setAddOwner] = useState<Owner>("remy");
   const [addCategory, setAddCategory] = useState<string>("baseball");
   const [addName, setAddName] = useState("");
   const [addSetName, setAddSetName] = useState("");
@@ -25,13 +23,11 @@ export default function WishlistPage() {
 
   const fetchItems = useCallback(async () => {
     setLoading(true);
-    const params = new URLSearchParams();
-    if (ownerFilter !== "all") params.set("owner", ownerFilter);
-    const res = await fetch(`/api/wishlist?${params}`);
+    const res = await fetch("/api/wishlist");
     const data = await res.json();
     setItems(data.items || []);
     setLoading(false);
-  }, [ownerFilter]);
+  }, []);
 
   useEffect(() => {
     fetchItems();
@@ -45,7 +41,7 @@ export default function WishlistPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          owner: addOwner,
+          owner: "remy",
           category: addCategory,
           name: addName.trim(),
           set_name: addSetName || null,
@@ -91,32 +87,7 @@ export default function WishlistPage() {
       {showAdd && (
         <div className="rounded-2xl bg-card-bg border border-card-border p-5 mb-6 space-y-4">
           <h2 className="text-lg font-bold">Add to Wishlist</h2>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm text-muted mb-1">Owner</label>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setAddOwner("remy")}
-                  className={`flex-1 py-2 rounded-lg text-sm font-medium text-center transition-colors ${
-                    addOwner === "remy"
-                      ? "bg-remy text-white"
-                      : "bg-background border border-card-border text-muted"
-                  }`}
-                >
-                  Remy
-                </button>
-                <button
-                  onClick={() => setAddOwner("leo")}
-                  className={`flex-1 py-2 rounded-lg text-sm font-medium text-center transition-colors ${
-                    addOwner === "leo"
-                      ? "bg-leo text-white"
-                      : "bg-background border border-card-border text-muted"
-                  }`}
-                >
-                  Leo
-                </button>
-              </div>
-            </div>
+          <div>
             <div>
               <label className="block text-sm text-muted mb-1">Category</label>
               <select
@@ -192,19 +163,6 @@ export default function WishlistPage() {
         </div>
       )}
 
-      {/* Filters */}
-      <div className="flex gap-3 mb-6">
-        <select
-          value={ownerFilter}
-          onChange={(e) => setOwnerFilter(e.target.value as Owner | "all")}
-          className="px-3 py-2 rounded-lg bg-card-bg border border-card-border text-sm focus:outline-none focus:border-accent"
-        >
-          <option value="all">All Owners</option>
-          <option value="remy">Remy</option>
-          <option value="leo">Leo</option>
-        </select>
-      </div>
-
       {/* Items */}
       {loading ? (
         <div className="text-center py-16 text-muted">Loading wishlist...</div>
@@ -251,22 +209,11 @@ export default function WishlistPage() {
                   {item.set_name && (
                     <div className="text-xs text-muted truncate">{item.set_name}</div>
                   )}
-                  <div className="flex items-center gap-2 mt-1">
-                    <span
-                      className={`text-xs font-medium px-1.5 py-0.5 rounded ${
-                        item.owner === "remy"
-                          ? "bg-remy/20 text-remy"
-                          : "bg-leo/20 text-leo"
-                      }`}
-                    >
-                      {item.owner === "remy" ? "Remy" : "Leo"}
-                    </span>
-                    {item.target_price && (
-                      <span className="text-xs text-success">
-                        Target: {formatPrice(item.target_price)}
-                      </span>
-                    )}
-                  </div>
+                  {item.target_price && (
+                    <div className="text-xs text-success mt-1">
+                      Target: {formatPrice(item.target_price)}
+                    </div>
+                  )}
                   {item.notes && (
                     <div className="text-xs text-muted mt-1">{item.notes}</div>
                   )}

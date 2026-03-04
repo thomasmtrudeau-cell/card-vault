@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { CollectionItem, Owner, Condition, GradingCompany } from "@/lib/types";
+import type { CollectionItem, Condition, GradingCompany } from "@/lib/types";
 
 interface EditCardModalProps {
   item: CollectionItem;
@@ -10,7 +10,6 @@ interface EditCardModalProps {
 }
 
 export default function EditCardModal({ item, onClose, onSaved }: EditCardModalProps) {
-  const [owner, setOwner] = useState<Owner>(item.owner);
   const [condition, setCondition] = useState<Condition>(item.condition);
   const [gradingCompany, setGradingCompany] = useState<GradingCompany>(
     item.grading_company || "PSA"
@@ -24,7 +23,6 @@ export default function EditCardModal({ item, onClose, onSaved }: EditCardModalP
     setSaving(true);
     try {
       const body: Record<string, unknown> = {
-        owner,
         condition,
         quantity,
         notes: notes || null,
@@ -65,33 +63,6 @@ export default function EditCardModal({ item, onClose, onSaved }: EditCardModalP
         </div>
 
         <div className="space-y-5">
-          {/* Owner */}
-          <div>
-            <label className="block text-sm text-muted mb-2">Owner</label>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setOwner("remy")}
-                className={`flex-1 py-3 rounded-lg font-medium text-center transition-colors ${
-                  owner === "remy"
-                    ? "bg-remy text-white"
-                    : "bg-background border border-card-border text-muted hover:text-foreground"
-                }`}
-              >
-                Remy
-              </button>
-              <button
-                onClick={() => setOwner("leo")}
-                className={`flex-1 py-3 rounded-lg font-medium text-center transition-colors ${
-                  owner === "leo"
-                    ? "bg-leo text-white"
-                    : "bg-background border border-card-border text-muted hover:text-foreground"
-                }`}
-              >
-                Leo
-              </button>
-            </div>
-          </div>
-
           {/* Condition */}
           <div>
             <label className="block text-sm text-muted mb-2">Condition</label>

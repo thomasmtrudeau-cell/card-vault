@@ -31,10 +31,6 @@ interface Stats {
   totalValue: number;
   totalLow: number;
   totalHigh: number;
-  remyValue: number;
-  leoValue: number;
-  remyCount: number;
-  leoCount: number;
   mostValuable: CollectionItem | null;
   mostValuablePrice: number;
   categoryValues: CategoryValue[];
@@ -47,10 +43,6 @@ function computeStats(items: CollectionItem[]): Stats {
   let totalValue = 0;
   let totalLow = 0;
   let totalHigh = 0;
-  let remyValue = 0;
-  let leoValue = 0;
-  let remyCount = 0;
-  let leoCount = 0;
   let mostValuable: CollectionItem | null = null;
   let mostValuablePrice = 0;
   const catMap: Record<string, CategoryValue> = {};
@@ -65,14 +57,6 @@ function computeStats(items: CollectionItem[]): Stats {
     totalValue += itemValue;
     totalLow += low * qty;
     totalHigh += high * qty;
-
-    if (item.owner === "remy") {
-      remyValue += itemValue;
-      remyCount += qty;
-    } else {
-      leoValue += itemValue;
-      leoCount += qty;
-    }
 
     if (price > mostValuablePrice) {
       mostValuablePrice = price;
@@ -110,10 +94,6 @@ function computeStats(items: CollectionItem[]): Stats {
     totalValue,
     totalLow,
     totalHigh,
-    remyValue,
-    leoValue,
-    remyCount,
-    leoCount,
     mostValuable,
     mostValuablePrice,
     categoryValues,
@@ -124,7 +104,6 @@ function computeStats(items: CollectionItem[]): Stats {
 }
 
 function ShareModal({ onClose }: { onClose: () => void }) {
-  const [filter, setFilter] = useState<"all" | "remy" | "leo">("all");
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -135,9 +114,7 @@ function ShareModal({ onClose }: { onClose: () => void }) {
       const res = await fetch("/api/share", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          owner_filter: filter === "all" ? null : filter,
-        }),
+        body: JSON.stringify({}),
       });
       const data = await res.json();
       if (data.link) {
@@ -173,24 +150,9 @@ function ShareModal({ onClose }: { onClose: () => void }) {
 
         {!shareUrl ? (
           <div className="space-y-4">
-            <div>
-              <label className="block text-sm text-muted mb-2">What to share</label>
-              <div className="flex gap-2">
-                {(["all", "remy", "leo"] as const).map((f) => (
-                  <button
-                    key={f}
-                    onClick={() => setFilter(f)}
-                    className={`flex-1 py-2 rounded-lg text-sm font-medium text-center transition-colors ${
-                      filter === f
-                        ? "bg-accent text-white"
-                        : "bg-background border border-card-border text-muted"
-                    }`}
-                  >
-                    {f === "all" ? "Everyone" : f === "remy" ? "Remy" : "Leo"}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <p className="text-sm text-muted">
+              Create a public link so anyone can view your collection.
+            </p>
             <button
               onClick={handleCreate}
               disabled={creating}
@@ -246,7 +208,7 @@ export default function Dashboard() {
         <div>
           <h1 className="text-3xl font-bold">Card Vault</h1>
           <p className="text-muted text-sm">
-            Remy & Leo&apos;s Card Collection
+            Remy & Leo&apos;s Collection
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -295,33 +257,6 @@ export default function Dashboard() {
               <span>After eBay Fees: <span className="text-foreground font-medium">{formatPrice(afterEbayFees(stats.totalValue))}</span></span>
             </div>
 
-            {/* Remy vs Leo */}
-            <div className="grid grid-cols-2 gap-4 mt-5">
-              <div className="rounded-xl bg-remy/10 border border-remy/20 p-4">
-                <div className="text-sm text-remy font-medium">Remy</div>
-                <div className="text-xl font-bold">
-                  {formatPrice(stats.remyValue)}
-                </div>
-                <div className="text-xs text-muted">
-                  {stats.remyCount} card{stats.remyCount !== 1 ? "s" : ""}
-                  {stats.remyValue > 0 && (
-                    <> · Net {formatPrice(afterEbayFees(stats.remyValue))}</>
-                  )}
-                </div>
-              </div>
-              <div className="rounded-xl bg-leo/10 border border-leo/20 p-4">
-                <div className="text-sm text-leo font-medium">Leo</div>
-                <div className="text-xl font-bold">
-                  {formatPrice(stats.leoValue)}
-                </div>
-                <div className="text-xs text-muted">
-                  {stats.leoCount} card{stats.leoCount !== 1 ? "s" : ""}
-                  {stats.leoValue > 0 && (
-                    <> · Net {formatPrice(afterEbayFees(stats.leoValue))}</>
-                  )}
-                </div>
-              </div>
-            </div>
           </div>
 
           {/* Category Value Breakdown */}
@@ -474,16 +409,7 @@ export default function Dashboard() {
                       </div>
                     </div>
                     <div className="text-right shrink-0">
-                      <span
-                        className={`text-xs font-medium px-1.5 py-0.5 rounded ${
-                          item.owner === "remy"
-                            ? "bg-remy/20 text-remy"
-                            : "bg-leo/20 text-leo"
-                        }`}
-                      >
-                        {item.owner === "remy" ? "Remy" : "Leo"}
-                      </span>
-                      <div className="text-sm text-success font-medium mt-1">
+                      <div className="text-sm text-success font-medium">
                         {formatPrice(range.market)}
                       </div>
                       {range.low && range.high && range.low !== range.high && (

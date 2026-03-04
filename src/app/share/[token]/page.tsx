@@ -68,9 +68,7 @@ export default function SharedCollectionPage({
           <h1 className="text-2xl font-bold">Card Vault</h1>
         </div>
         <p className="text-muted text-sm">
-          {ownerFilter
-            ? `${ownerFilter === "remy" ? "Remy" : "Leo"}'s Collection`
-            : "Shared Collection"}
+          Remy & Leo&apos;s Collection
           {" · "}
           {items.length} card{items.length !== 1 ? "s" : ""}
           {totalValue > 0 && ` · ${formatPrice(totalValue)}`}
@@ -113,16 +111,7 @@ export default function SharedCollectionPage({
                   <div className="text-xs text-muted truncate mt-0.5">
                     {item.card?.set_name}
                   </div>
-                  <div className="flex items-center justify-between mt-2">
-                    <span
-                      className={`text-xs font-medium px-1.5 py-0.5 rounded ${
-                        item.owner === "remy"
-                          ? "bg-remy/20 text-remy"
-                          : "bg-leo/20 text-leo"
-                      }`}
-                    >
-                      {item.owner === "remy" ? "Remy" : "Leo"}
-                    </span>
+                  <div className="flex items-center justify-end mt-2">
                     <div className="text-xs text-success font-medium">
                       {formatPrice(range.market)}
                     </div>

@@ -7,14 +7,13 @@ import { CATEGORIES } from "@/lib/categories";
 import { getCategoryIcon } from "@/lib/categories";
 import { formatPrice, escapeCSV, formatDate } from "@/lib/format";
 import { getAveragePrice, getPriceRange } from "@/lib/price-fetcher";
-import type { CollectionItem, CardCategory, Owner } from "@/lib/types";
+import type { CollectionItem, CardCategory } from "@/lib/types";
 
 type SortKey = "date" | "value_high" | "value_low" | "name" | "grade";
 
 export default function CollectionPage() {
   const [items, setItems] = useState<CollectionItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [ownerFilter, setOwnerFilter] = useState<Owner | "all">("all");
   const [categoryFilter, setCategoryFilter] = useState<CardCategory | "all">(
     "all"
   );
@@ -24,13 +23,12 @@ export default function CollectionPage() {
   const fetchCollection = useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams();
-    if (ownerFilter !== "all") params.set("owner", ownerFilter);
     if (categoryFilter !== "all") params.set("category", categoryFilter);
     const res = await fetch(`/api/collection?${params}`);
     const data = await res.json();
     setItems(data.items || []);
     setLoading(false);
-  }, [ownerFilter, categoryFilter]);
+  }, [categoryFilter]);
 
   useEffect(() => {
     fetchCollection();
@@ -83,7 +81,6 @@ export default function CollectionPage() {
       "Card #",
       "Year",
       "Category",
-      "Owner",
       "Condition",
       "Grade",
       "Qty",
@@ -101,7 +98,6 @@ export default function CollectionPage() {
         escapeCSV(item.card?.card_number),
         escapeCSV(item.card?.year),
         escapeCSV(item.card?.category),
-        escapeCSV(item.owner),
         escapeCSV(
           item.condition === "graded"
             ? `${item.grading_company} ${item.grade}`
@@ -158,15 +154,6 @@ export default function CollectionPage() {
           placeholder="Search collection..."
           className="flex-1 min-w-[200px] px-3 py-2 rounded-lg bg-card-bg border border-card-border text-sm focus:outline-none focus:border-accent"
         />
-        <select
-          value={ownerFilter}
-          onChange={(e) => setOwnerFilter(e.target.value as Owner | "all")}
-          className="px-3 py-2 rounded-lg bg-card-bg border border-card-border text-sm focus:outline-none focus:border-accent"
-        >
-          <option value="all">All Owners</option>
-          <option value="remy">Remy</option>
-          <option value="leo">Leo</option>
-        </select>
         <select
           value={categoryFilter}
           onChange={(e) =>
@@ -257,16 +244,7 @@ export default function CollectionPage() {
                   <div className="text-xs text-muted truncate mt-0.5">
                     {item.card?.set_name}
                   </div>
-                  <div className="flex items-center justify-between mt-2">
-                    <span
-                      className={`text-xs font-medium px-1.5 py-0.5 rounded ${
-                        item.owner === "remy"
-                          ? "bg-remy/20 text-remy"
-                          : "bg-leo/20 text-leo"
-                      }`}
-                    >
-                      {item.owner === "remy" ? "Remy" : "Leo"}
-                    </span>
+                  <div className="flex items-center justify-end mt-2">
                     <div className="text-right">
                       <div className="text-xs text-success font-medium">
                         {formatPrice(range.market)}
