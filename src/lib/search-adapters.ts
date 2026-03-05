@@ -310,7 +310,7 @@ async function searchSportsPlayer(
           set_name: null,
           card_number: null,
           year: null,
-          rarity: player.strPosition,
+          rarity: null,
           image_url: player.strCutout || player.strThumb || null,
           category,
           prices: [],

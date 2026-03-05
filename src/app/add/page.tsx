@@ -112,6 +112,13 @@ export default function AddCardPage() {
     setSelectedCard(result);
     setDuplicateNotice(null);
 
+    // Pre-populate editable fields from search result
+    setManualSet(result.set_name || "");
+    setManualNumber(result.card_number || "");
+    setManualYear(result.year ? String(result.year) : "");
+    setManualRarity(result.rarity || "");
+    setManualVariant("");
+
     if (bulkMode) {
       // In bulk mode, add to queue immediately
       setBulkQueue((prev) => [
@@ -583,7 +590,7 @@ export default function AddCardPage() {
                   <label className="block text-xs text-muted mb-1">Set Name</label>
                   <input
                     type="text"
-                    value={manualSet || selectedCard.set_name || ""}
+                    value={manualSet}
                     onChange={(e) => setManualSet(e.target.value)}
                     placeholder={isSportsCategory ? "e.g. 2023 Topps Chrome" : "e.g. Base Set, Evolving Skies"}
                     className="w-full px-3 py-2 rounded-lg bg-background border border-card-border focus:border-accent focus:outline-none text-sm"
@@ -594,7 +601,7 @@ export default function AddCardPage() {
                     <label className="block text-xs text-muted mb-1">Year</label>
                     <input
                       type="number"
-                      value={manualYear || selectedCard.year || ""}
+                      value={manualYear}
                       onChange={(e) => setManualYear(e.target.value)}
                       placeholder="1999"
                       className="w-full px-3 py-2 rounded-lg bg-background border border-card-border focus:border-accent focus:outline-none text-sm"
@@ -604,7 +611,7 @@ export default function AddCardPage() {
                     <label className="block text-xs text-muted mb-1">Card #</label>
                     <input
                       type="text"
-                      value={manualNumber || selectedCard.card_number || ""}
+                      value={manualNumber}
                       onChange={(e) => setManualNumber(e.target.value)}
                       placeholder="#63"
                       className="w-full px-3 py-2 rounded-lg bg-background border border-card-border focus:border-accent focus:outline-none text-sm"
@@ -615,7 +622,7 @@ export default function AddCardPage() {
                       <label className="block text-xs text-muted mb-1">Parallel</label>
                       <input
                         type="text"
-                        value={manualRarity || selectedCard.rarity || ""}
+                        value={manualRarity}
                         onChange={(e) => setManualRarity(e.target.value)}
                         placeholder="Refractor"
                         className="w-full px-3 py-2 rounded-lg bg-background border border-card-border focus:border-accent focus:outline-none text-sm"
@@ -643,7 +650,7 @@ export default function AddCardPage() {
                       <label className="block text-xs text-muted mb-1">Rarity</label>
                       <input
                         type="text"
-                        value={manualRarity || selectedCard.rarity || ""}
+                        value={manualRarity}
                         onChange={(e) => setManualRarity(e.target.value)}
                         placeholder="Common, Rare Holo"
                         className="w-full px-3 py-2 rounded-lg bg-background border border-card-border focus:border-accent focus:outline-none text-sm"
