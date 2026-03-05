@@ -18,21 +18,45 @@ async function searchPokemon(query: string): Promise<SearchResult[]> {
   const data: { id: string; localId: string; name: string; image?: string }[] =
     await res.json();
 
-  return data
-    .filter((c) => c.image)
-    .slice(0, 20)
-    .map((card) => ({
+  const top = data.filter((c) => c.image).slice(0, 20);
+
+  // Fetch details in parallel (set name, rarity, year) with a 4s timeout
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 4000);
+
+  const detailed = await Promise.all(
+    top.map(async (card) => {
+      try {
+        const detailRes = await fetch(
+          `https://api.tcgdex.net/v2/en/cards/${card.id}`,
+          { signal: controller.signal }
+        );
+        if (!detailRes.ok) return null;
+        return await detailRes.json();
+      } catch {
+        return null;
+      }
+    })
+  );
+  clearTimeout(timeout);
+
+  return top.map((card, i) => {
+    const detail = detailed[i];
+    return {
       external_id: card.id,
       external_source: "tcgdex" as const,
       name: card.name,
-      set_name: null,
+      set_name: detail?.set?.name || null,
       card_number: card.localId || null,
-      year: null,
-      rarity: null,
+      year: detail?.set?.releaseDate
+        ? parseInt(detail.set.releaseDate.substring(0, 4))
+        : null,
+      rarity: detail?.rarity || null,
       image_url: `${card.image}/high.webp`,
       category: "pokemon" as CardCategory,
       prices: [],
-    }));
+    };
+  });
 }
 
 // Magic: The Gathering adapter (Scryfall)
