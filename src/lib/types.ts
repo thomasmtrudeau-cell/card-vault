@@ -97,6 +97,18 @@ export interface WishlistItem {
   created_at: string;
 }
 
+export interface Mover {
+  collectionItemId: string;
+  cardId: string;
+  name: string;
+  setName: string | null;
+  imageUrl: string | null;
+  category: string;
+  currentPrice: number;
+  previousPrice: number;
+  pctChange: number;
+}
+
 export interface ShareLink {
   id: string;
   share_token: string;

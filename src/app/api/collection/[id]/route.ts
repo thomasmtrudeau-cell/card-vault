@@ -25,6 +25,26 @@ export async function PATCH(
   if (body.quantity !== undefined) updates.quantity = body.quantity;
   if (body.notes !== undefined) updates.notes = body.notes;
 
+  // Card-level field updates
+  const cardFields: Record<string, unknown> = {};
+  if (body.set_name !== undefined) cardFields.set_name = body.set_name || null;
+  if (body.card_number !== undefined) cardFields.card_number = body.card_number || null;
+  if (body.year !== undefined) cardFields.year = body.year || null;
+  if (body.rarity !== undefined) cardFields.rarity = body.rarity || null;
+  if (body.image_url !== undefined) cardFields.image_url = body.image_url || null;
+
+  if (Object.keys(cardFields).length > 0) {
+    const { data: item } = await supabase
+      .from("collection_items")
+      .select("card_id")
+      .eq("id", id)
+      .single();
+
+    if (item?.card_id) {
+      await supabase.from("cards").update(cardFields).eq("id", item.card_id);
+    }
+  }
+
   const { data, error } = await supabase
     .from("collection_items")
     .update(updates)

@@ -307,7 +307,7 @@ async function searchSportsPlayer(
           external_id: `sportsdb_${player.idPlayer}`,
           external_source: "thesportsdb" as const,
           name: player.strPlayer,
-          set_name: player.strTeam,
+          set_name: null,
           card_number: null,
           year: null,
           rarity: player.strPosition,

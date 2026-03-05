@@ -9,6 +9,7 @@ import { getPriceRange } from "@/lib/price-fetcher";
 import type { CollectionItem, CardCategory } from "@/lib/types";
 import AnimatedCounter from "@/components/AnimatedCounter";
 import EmptyPlaceholder from "@/components/EmptyPlaceholder";
+import MoversPanel from "@/components/MoversPanel";
 
 const SPORTS_CATS: CardCategory[] = [
   "baseball",
@@ -323,6 +324,9 @@ export default function Dashboard() {
               <EmptyPlaceholder type="tcg" />
             )}
           </div>
+
+          {/* Price Movers */}
+          <MoversPanel />
 
           {/* Quick Stats */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
