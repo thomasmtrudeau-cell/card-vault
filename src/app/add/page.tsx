@@ -58,6 +58,7 @@ export default function AddCardPage() {
   const [manualRarity, setManualRarity] = useState("");
   const [manualVariant, setManualVariant] = useState("");
   const [showEbayPicker, setShowEbayPicker] = useState(false);
+  const [showManualEntry, setShowManualEntry] = useState(false);
 
   const isSportsCategory =
     category &&
@@ -109,14 +110,41 @@ export default function AddCardPage() {
   };
 
   const handleSelectCard = async (result: SearchResult) => {
-    setSelectedCard(result);
+    let displayResult = { ...result };
+
+    // For eBay results, parse the title into structured fields
+    if (result.external_source === "ebay" && result.name) {
+      const title = result.name;
+      // Extract year (e.g. "2003-04" or "2023")
+      const yearMatch = title.match(/\b((?:19|20)\d{2})(?:-\d{2})?\b/);
+      // Extract card number
+      const numberMatch = title.match(/#(\d+)/);
+      // Try to extract a cleaner name: remove year, card number, common suffixes
+      let cleanName = title
+        .replace(/\b\d{4}(-\d{2})?\b/g, "") // remove years
+        .replace(/#\d+/g, "") // remove card numbers
+        .replace(/\b(RC|PSA|BGS|CGC|SGC|GEM|MINT|MT|NM|EX|VG|GOOD)\b/gi, "")
+        .replace(/\b\d+(\.\d+)?\s*(GEM\s*MT|MINT|NM|EX)\b/gi, "")
+        .replace(/\b(basketball|baseball|football|hockey|card|cards|rookie)\b/gi, "")
+        .replace(/[()]/g, "")
+        .replace(/\s{2,}/g, " ")
+        .trim();
+      // Remove trailing/leading dashes and spaces
+      cleanName = cleanName.replace(/^[\s-]+|[\s-]+$/g, "").trim();
+
+      if (cleanName) displayResult.name = cleanName;
+      if (yearMatch && !result.year) displayResult.year = parseInt(yearMatch[1]);
+      if (numberMatch && !result.card_number) displayResult.card_number = numberMatch[1];
+    }
+
+    setSelectedCard(displayResult);
     setDuplicateNotice(null);
 
     // Pre-populate editable fields from search result
-    setManualSet(result.set_name || "");
-    setManualNumber(result.card_number || "");
-    setManualYear(result.year ? String(result.year) : "");
-    setManualRarity(result.rarity || "");
+    setManualSet(displayResult.set_name || "");
+    setManualNumber(displayResult.card_number || "");
+    setManualYear(displayResult.year ? String(displayResult.year) : "");
+    setManualRarity(displayResult.rarity || "");
     setManualVariant("");
 
     if (bulkMode) {
@@ -280,6 +308,7 @@ export default function AddCardPage() {
                   setSearchQuery("");
                   setDuplicateNotice(null);
                   setBulkQueue([]);
+                  setShowManualEntry(false);
                 }}
                 className="flex items-center gap-3 p-4 rounded-xl bg-card-bg border border-card-border hover:border-accent transition-colors text-left"
               >
@@ -434,9 +463,96 @@ export default function AddCardPage() {
                   No results found. Try a different search.
                 </p>
               )}
+
+              {/* Manual entry toggle */}
+              {!showManualEntry && (
+                <button
+                  onClick={() => setShowManualEntry(true)}
+                  className="w-full mt-4 text-sm text-muted hover:text-accent transition-colors"
+                >
+                  Can&apos;t find it? Enter manually →
+                </button>
+              )}
+
+              {showManualEntry && (
+                <div className="mt-4 space-y-4 p-4 rounded-xl bg-card-bg border border-card-border">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-medium">Manual Entry</div>
+                    <button
+                      onClick={() => setShowManualEntry(false)}
+                      className="text-xs text-muted hover:text-foreground"
+                    >
+                      Back to search
+                    </button>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-muted mb-1">Card Name *</label>
+                    <input
+                      type="text"
+                      value={manualName}
+                      onChange={(e) => setManualName(e.target.value)}
+                      placeholder={isSportsCategory ? "e.g. LeBron James" : "e.g. Charizard"}
+                      className="w-full px-4 py-3 rounded-lg bg-background border border-card-border focus:border-accent focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-muted mb-1">Set Name</label>
+                    <input
+                      type="text"
+                      value={manualSet}
+                      onChange={(e) => setManualSet(e.target.value)}
+                      placeholder={isSportsCategory ? "e.g. 2003 Topps Chrome" : "e.g. Base Set"}
+                      className="w-full px-4 py-3 rounded-lg bg-background border border-card-border focus:border-accent focus:outline-none"
+                    />
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-sm text-muted mb-1">Card #</label>
+                      <input
+                        type="text"
+                        value={manualNumber}
+                        onChange={(e) => setManualNumber(e.target.value)}
+                        placeholder="#123"
+                        className="w-full px-4 py-3 rounded-lg bg-background border border-card-border focus:border-accent focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-muted mb-1">Year</label>
+                      <input
+                        type="number"
+                        value={manualYear}
+                        onChange={(e) => setManualYear(e.target.value)}
+                        placeholder="2023"
+                        className="w-full px-4 py-3 rounded-lg bg-background border border-card-border focus:border-accent focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-muted mb-1">{isSportsCategory ? "Parallel" : "Rarity"}</label>
+                      <input
+                        type="text"
+                        value={manualRarity}
+                        onChange={(e) => setManualRarity(e.target.value)}
+                        placeholder={isSportsCategory ? "Refractor" : "Holo Rare"}
+                        className="w-full px-4 py-3 rounded-lg bg-background border border-card-border focus:border-accent focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (!manualName.trim()) return;
+                      setSelectedCard(null);
+                      setStep("details");
+                    }}
+                    disabled={!manualName.trim()}
+                    className="w-full py-3 rounded-lg bg-accent hover:bg-accent-hover text-white font-medium disabled:opacity-50 transition-colors"
+                  >
+                    Continue
+                  </button>
+                </div>
+              )}
             </>
           ) : (
-            /* Manual entry for sports cards */
+            /* Manual entry for non-searchable categories */
             <div className="space-y-4">
               <div>
                 <label className="block text-sm text-muted mb-1">
@@ -654,20 +770,18 @@ export default function AddCardPage() {
                     </div>
                   </div>
                 )}
-                {isSportsCategory && (
-                  <button
-                    type="button"
-                    onClick={() => setShowEbayPicker(true)}
-                    className="w-full py-2 rounded-lg border border-accent text-accent text-sm font-medium hover:bg-accent/10 transition-colors"
-                  >
-                    Find My Card on eBay
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => setShowEbayPicker(true)}
+                  className="w-full py-2 rounded-lg border border-accent text-accent text-sm font-medium hover:bg-accent/10 transition-colors"
+                >
+                  Find My Card on eBay
+                </button>
               </div>
             )}
 
             {/* Find My Card for manual entries (no selectedCard) */}
-            {isSportsCategory && !selectedCard && (
+            {!selectedCard && (
               <button
                 type="button"
                 onClick={() => setShowEbayPicker(true)}
@@ -920,7 +1034,7 @@ export default function AddCardPage() {
       )}
 
       {/* eBay Listing Picker */}
-      {showEbayPicker && isSportsCategory && (
+      {showEbayPicker && (
         <EbayListingPicker
           playerName={selectedCard?.name || manualName}
           setName={manualSet || undefined}

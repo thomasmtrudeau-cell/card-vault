@@ -44,20 +44,28 @@ export async function POST(request: NextRequest) {
     parts.push(playerName);
     if (cardNumber) parts.push(`#${cardNumber}`);
 
-    const sportKeyword =
-      category === "football"
-        ? "football"
-        : category === "basketball"
-          ? "basketball"
-          : category === "hockey"
-            ? "hockey"
-            : "baseball";
-    if (!setName) parts.push(sportKeyword, "card");
+    const TCG_CATEGORIES = ["pokemon", "magic", "yugioh"];
+    const isTCG = TCG_CATEGORIES.includes(category);
+
+    if (isTCG) {
+      if (!setName) parts.push(category === "pokemon" ? "pokemon card" : category === "magic" ? "mtg card" : "yugioh card");
+    } else {
+      const sportKeyword =
+        category === "football"
+          ? "football"
+          : category === "basketball"
+            ? "basketball"
+            : category === "hockey"
+              ? "hockey"
+              : "baseball";
+      if (!setName) parts.push(sportKeyword, "card");
+    }
 
     const query = parts.join(" ");
+    const categoryId = isTCG ? "183454" : "261328";
 
     const browseRes = await fetch(
-      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&category_ids=261328&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US&sort=price&limit=20`,
+      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&category_ids=${categoryId}&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US&sort=price&limit=20`,
       { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
     );
     if (!browseRes.ok) {

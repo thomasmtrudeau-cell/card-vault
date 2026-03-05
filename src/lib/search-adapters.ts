@@ -214,7 +214,10 @@ async function searchEbayCards(
           : category === "hockey"
             ? "hockey"
             : "baseball";
-    const searchQuery = `${query} ${sportKeyword} card -lot -break -box -pack -repack -case`;
+    // Only add sport keyword for short/vague queries (3 words or less)
+    const wordCount = query.trim().split(/\s+/).length;
+    const suffix = wordCount <= 3 ? ` ${sportKeyword} card` : " card";
+    const searchQuery = `${query}${suffix} -lot -break -box -pack -repack -case`;
     const browseRes = await fetch(
       `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(searchQuery)}&category_ids=261328&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[5..],priceCurrency:USD&limit=30`,
       { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
