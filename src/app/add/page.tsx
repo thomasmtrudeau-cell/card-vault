@@ -56,11 +56,16 @@ export default function AddCardPage() {
   const [manualNumber, setManualNumber] = useState("");
   const [manualYear, setManualYear] = useState("");
   const [manualRarity, setManualRarity] = useState("");
+  const [manualVariant, setManualVariant] = useState("");
   const [showEbayPicker, setShowEbayPicker] = useState(false);
 
   const isSportsCategory =
     category &&
     ["baseball", "football", "basketball", "hockey"].includes(category);
+
+  const isTCGCategory =
+    category &&
+    ["pokemon", "magic", "yugioh"].includes(category);
 
   const isSearchable =
     category &&
@@ -584,14 +589,14 @@ export default function AddCardPage() {
                     className="w-full px-3 py-2 rounded-lg bg-background border border-card-border focus:border-accent focus:outline-none text-sm"
                   />
                 </div>
-                <div className="grid grid-cols-3 gap-3">
+                <div className={`grid ${isTCGCategory ? "grid-cols-2" : "grid-cols-3"} gap-3`}>
                   <div>
                     <label className="block text-xs text-muted mb-1">Year</label>
                     <input
                       type="number"
                       value={manualYear || selectedCard.year || ""}
                       onChange={(e) => setManualYear(e.target.value)}
-                      placeholder="2023"
+                      placeholder="1999"
                       className="w-full px-3 py-2 rounded-lg bg-background border border-card-border focus:border-accent focus:outline-none text-sm"
                     />
                   </div>
@@ -601,21 +606,51 @@ export default function AddCardPage() {
                       type="text"
                       value={manualNumber || selectedCard.card_number || ""}
                       onChange={(e) => setManualNumber(e.target.value)}
-                      placeholder="#123"
+                      placeholder="#63"
                       className="w-full px-3 py-2 rounded-lg bg-background border border-card-border focus:border-accent focus:outline-none text-sm"
                     />
                   </div>
-                  <div>
-                    <label className="block text-xs text-muted mb-1">{isSportsCategory ? "Parallel" : "Rarity"}</label>
-                    <input
-                      type="text"
-                      value={manualRarity || selectedCard.rarity || ""}
-                      onChange={(e) => setManualRarity(e.target.value)}
-                      placeholder={isSportsCategory ? "Refractor" : "Holo Rare"}
-                      className="w-full px-3 py-2 rounded-lg bg-background border border-card-border focus:border-accent focus:outline-none text-sm"
-                    />
-                  </div>
+                  {isSportsCategory && (
+                    <div>
+                      <label className="block text-xs text-muted mb-1">Parallel</label>
+                      <input
+                        type="text"
+                        value={manualRarity || selectedCard.rarity || ""}
+                        onChange={(e) => setManualRarity(e.target.value)}
+                        placeholder="Refractor"
+                        className="w-full px-3 py-2 rounded-lg bg-background border border-card-border focus:border-accent focus:outline-none text-sm"
+                      />
+                    </div>
+                  )}
                 </div>
+                {isTCGCategory && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-muted mb-1">Edition / Variant</label>
+                      <select
+                        value={manualVariant}
+                        onChange={(e) => setManualVariant(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg bg-background border border-card-border focus:border-accent focus:outline-none text-sm"
+                      >
+                        <option value="">Unlimited</option>
+                        <option value="1st Edition">1st Edition</option>
+                        <option value="Shadowless">Shadowless</option>
+                        <option value="Reverse Holo">Reverse Holo</option>
+                        <option value="Holo">Holo</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-muted mb-1">Rarity</label>
+                      <input
+                        type="text"
+                        value={manualRarity || selectedCard.rarity || ""}
+                        onChange={(e) => setManualRarity(e.target.value)}
+                        placeholder="Common, Rare Holo"
+                        className="w-full px-3 py-2 rounded-lg bg-background border border-card-border focus:border-accent focus:outline-none text-sm"
+                      />
+                    </div>
+                  </div>
+                )}
                 {isSportsCategory && (
                   <button
                     type="button"
@@ -756,6 +791,7 @@ export default function AddCardPage() {
                         year: manualYear || selectedCard.year || null,
                         cardNumber: manualNumber || selectedCard.card_number || null,
                         parallel: manualRarity || selectedCard.rarity || null,
+                        variant: manualVariant || null,
                         category,
                         condition,
                         gradingCompany:
@@ -830,8 +866,10 @@ export default function AddCardPage() {
                   {manualNumber && ` #${manualNumber}`}
                 </p>
               )}
-              {manualRarity && (
-                <p className="text-xs text-muted">{manualRarity}</p>
+              {(manualVariant || manualRarity) && (
+                <p className="text-xs text-muted">
+                  {[manualVariant, manualRarity].filter(Boolean).join(" · ")}
+                </p>
               )}
             </div>
 

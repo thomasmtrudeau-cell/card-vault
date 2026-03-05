@@ -9,6 +9,7 @@ export async function POST(request: NextRequest) {
     year,
     cardNumber,
     parallel,
+    variant,
     category,
     condition,
     gradingCompany,
@@ -49,6 +50,7 @@ export async function POST(request: NextRequest) {
     if (setName) parts.push(setName);
     parts.push(playerName);
     if (cardNumber) parts.push(`#${cardNumber}`);
+    if (variant) parts.push(variant);
     if (parallel) parts.push(parallel);
     if (condition === "graded" && gradingCompany) {
       parts.push(gradingCompany);
