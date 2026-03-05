@@ -199,7 +199,7 @@ async function fetchEbayTCGPrice(
     if (card.card_number) parts.push(`#${card.card_number}`);
 
     const browseRes = await fetch(
-      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(parts.join(" "))}&category_ids=183454&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US&sort=price&limit=25`,
+      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(parts.join(" "))}&category_ids=183454&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US&limit=25`,
       { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
     );
     if (!browseRes.ok) return [];

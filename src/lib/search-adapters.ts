@@ -338,7 +338,7 @@ async function fetchEbayEstimate(
             : "baseball";
     const searchQuery = `${playerName} ${sportKeyword} card`;
     const browseRes = await fetch(
-      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(searchQuery)}&category_ids=261328&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US&sort=price&limit=10`,
+      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(searchQuery)}&category_ids=261328&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[5..],priceCurrency:USD&limit=10`,
       {
         headers: { Authorization: `Bearer ${accessToken}` },
       }
