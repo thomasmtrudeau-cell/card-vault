@@ -634,17 +634,13 @@ export default function AddCardPage() {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs text-muted mb-1">Edition / Variant</label>
-                      <select
+                      <input
+                        type="text"
                         value={manualVariant}
                         onChange={(e) => setManualVariant(e.target.value)}
+                        placeholder="e.g. 1st Edition, Reverse Holo"
                         className="w-full px-3 py-2 rounded-lg bg-background border border-card-border focus:border-accent focus:outline-none text-sm"
-                      >
-                        <option value="">Unlimited</option>
-                        <option value="1st Edition">1st Edition</option>
-                        <option value="Shadowless">Shadowless</option>
-                        <option value="Reverse Holo">Reverse Holo</option>
-                        <option value="Holo">Holo</option>
-                      </select>
+                      />
                     </div>
                     <div>
                       <label className="block text-xs text-muted mb-1">Rarity</label>
