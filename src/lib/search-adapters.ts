@@ -1,9 +1,18 @@
 import type { SearchResult, CardCategory } from "./types";
 
 // Pokemon TCG adapter (TCGdex — free, no key required)
+// Supports "squirtle #63" syntax to filter by card number
 async function searchPokemon(query: string): Promise<SearchResult[]> {
+  // Parse optional card number from query (e.g. "squirtle #63" or "squirtle 63")
+  const numberMatch = query.match(/\s*#?(\d+)\s*$/);
+  const name = numberMatch ? query.slice(0, numberMatch.index).trim() : query;
+  const cardNumber = numberMatch ? numberMatch[1] : null;
+
+  const params = new URLSearchParams({ name });
+  if (cardNumber) params.set("localId", cardNumber);
+
   const res = await fetch(
-    `https://api.tcgdex.net/v2/en/cards?name=${encodeURIComponent(query)}`
+    `https://api.tcgdex.net/v2/en/cards?${params}`
   );
   if (!res.ok) return [];
   const data: { id: string; localId: string; name: string; image?: string }[] =

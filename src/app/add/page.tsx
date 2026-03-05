@@ -397,6 +397,9 @@ export default function AddCardPage() {
                       )}
                       <div className="text-sm font-medium leading-tight">
                         {result.name}
+                        {result.card_number && (
+                          <span className="text-muted font-normal"> #{result.card_number}</span>
+                        )}
                       </div>
                       <div className="text-xs text-muted mt-1">
                         {result.set_name}
