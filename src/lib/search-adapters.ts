@@ -214,19 +214,24 @@ async function searchEbayCards(
           : category === "hockey"
             ? "hockey"
             : "baseball";
-    const searchQuery = `${query} ${sportKeyword} card`;
+    const searchQuery = `${query} ${sportKeyword} card -lot -break -box -pack -repack -case`;
     const browseRes = await fetch(
-      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(searchQuery)}&category_ids=261328&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US&sort=price&limit=20`,
+      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(searchQuery)}&category_ids=261328&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[5..],priceCurrency:USD&limit=30`,
       { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
     );
     if (!browseRes.ok) return [];
     const browseData = await browseRes.json();
 
     const DISCOUNT = 0.85;
+    // Filter out bulk/pick listings by title
+    const junkPatterns = /you pick|pick your|choose your|complete your set|lot of|mystery|repack/i;
+
     return (browseData.itemSummaries || [])
       .filter(
-        (item: { image?: { imageUrl?: string } }) => item.image?.imageUrl
+        (item: { image?: { imageUrl?: string }; title?: string }) =>
+          item.image?.imageUrl && !junkPatterns.test(item.title || "")
       )
+      .slice(0, 20)
       .map(
         (item: {
           itemId?: string;
