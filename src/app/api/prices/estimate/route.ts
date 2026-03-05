@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
     const categoryId = isTCG ? "183454" : "261328";
 
     const browseRes = await fetch(
-      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&category_ids=${categoryId}&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[5..],priceCurrency:USD&limit=30`,
+      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&category_ids=${categoryId}&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[5..],priceCurrency:USD&limit=50`,
       { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
     );
     if (!browseRes.ok) {
@@ -111,18 +111,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ prices: [], query });
     }
 
-    // Floor-price model: lowest 5 BIN, 15% discount on all prices
+    // Market = lowest BIN × 0.85 (what you'd realistically pay)
+    // Low/High from the full range for context
     const DISCOUNT = 0.85;
-    const floor = listingPrices.slice(0, 5);
-    const floorMedian = floor[Math.floor(floor.length / 2)];
-    const estimated = Math.round(floorMedian * DISCOUNT * 100) / 100;
-    const low = Math.round(listingPrices[0] * DISCOUNT * 100) / 100;
+    const market = Math.round(listingPrices[0] * DISCOUNT * 100) / 100;
+    const median = listingPrices[Math.floor(listingPrices.length / 2)];
+    const mid = Math.round(median * DISCOUNT * 100) / 100;
     const high = Math.round(listingPrices[listingPrices.length - 1] * DISCOUNT * 100) / 100;
 
     return NextResponse.json({
       prices: [
-        { source: "ebay", price_usd: estimated, condition_key: "market" },
-        { source: "ebay", price_usd: low, condition_key: "low" },
+        { source: "ebay", price_usd: market, condition_key: "market" },
+        { source: "ebay", price_usd: mid, condition_key: "mid" },
         { source: "ebay", price_usd: high, condition_key: "high" },
       ],
       query,

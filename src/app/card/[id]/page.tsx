@@ -335,7 +335,7 @@ export default function CardDetailPage({
                     <span className="text-muted capitalize">
                       {p.source}
                       {p.condition_key && (
-                        <span className="text-xs ml-1">({p.condition_key})</span>
+                        <span className="text-xs ml-1">({p.condition_key === "mid" ? "Median" : p.condition_key})</span>
                       )}
                     </span>
                     <span className="font-medium">

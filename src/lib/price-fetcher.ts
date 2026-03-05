@@ -65,6 +65,8 @@ export async function getPricesWithRefresh(
   return (await getCachedPrices(cardId)) || freshPrices;
 }
 
+const TCG_CATEGORIES = ["pokemon", "magic", "yugioh"];
+
 async function fetchPricesFromSource(
   card: Card,
   context?: RefreshContext
@@ -79,6 +81,12 @@ async function fetchPricesFromSource(
     case "ygoprodeck":
       return fetchYugiohPrices(card);
     case "thesportsdb":
+      return fetchEbaySportsPrice(card, context);
+    case "ebay":
+      // Cards added via eBay search — use appropriate eBay pricer
+      if (TCG_CATEGORIES.includes(card.category)) {
+        return fetchEbayTCGPrice(card);
+      }
       return fetchEbaySportsPrice(card, context);
     default:
       return [];
@@ -194,18 +202,24 @@ async function fetchEbayTCGPrice(
     if (!tokenRes.ok) return [];
     const tokenData = await tokenRes.json();
 
-    const parts: string[] = [card.name, "pokemon card"];
-    if (card.set_name) parts.splice(1, 0, card.set_name);
+    const parts: string[] = [];
+    if (card.set_name) parts.push(card.set_name);
+    parts.push(card.name);
     if (card.card_number) parts.push(`#${card.card_number}`);
+    if (!card.set_name) parts.push("pokemon card");
+    const query = parts.join(" ") + " -lot -break -box -pack -repack";
 
     const browseRes = await fetch(
-      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(parts.join(" "))}&category_ids=183454&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US&limit=25`,
+      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&category_ids=183454&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[5..],priceCurrency:USD&limit=50`,
       { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
     );
     if (!browseRes.ok) return [];
     const browseData = await browseRes.json();
 
-    const listings = browseData.itemSummaries || [];
+    const junkPatterns = /you pick|pick your|choose your|complete your set|lot of|mystery|repack/i;
+    const listings = (browseData.itemSummaries || []).filter(
+      (item: { title?: string }) => !junkPatterns.test(item.title || "")
+    );
     const listingPrices: number[] = listings
       .map(
         (item: { price?: { value?: string } }) =>
@@ -217,15 +231,14 @@ async function fetchEbayTCGPrice(
     if (listingPrices.length === 0) return [];
 
     const DISCOUNT = 0.85;
-    const floor = listingPrices.slice(0, 5);
-    const floorMedian = floor[Math.floor(floor.length / 2)];
-    const estimated = Math.round(floorMedian * DISCOUNT * 100) / 100;
-    const low = Math.round(listingPrices[0] * DISCOUNT * 100) / 100;
+    const market = Math.round(listingPrices[0] * DISCOUNT * 100) / 100;
+    const median = listingPrices[Math.floor(listingPrices.length / 2)];
+    const mid = Math.round(median * DISCOUNT * 100) / 100;
     const high = Math.round(listingPrices[listingPrices.length - 1] * DISCOUNT * 100) / 100;
 
     return [
-      { card_id: card.id, source: "ebay", price_usd: estimated, condition_key: "market" },
-      { card_id: card.id, source: "ebay", price_usd: low, condition_key: "low" },
+      { card_id: card.id, source: "ebay", price_usd: market, condition_key: "market" },
+      { card_id: card.id, source: "ebay", price_usd: mid, condition_key: "mid" },
       { card_id: card.id, source: "ebay", price_usd: high, condition_key: "high" },
     ];
   } catch {
@@ -271,7 +284,7 @@ async function fetchEbaySportsPrice(
     if (!card.set_name) parts.push("card");
 
     const browseRes = await fetch(
-      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(parts.join(" ") + " -lot -break -box -pack -repack")}&category_ids=261328&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[5..],priceCurrency:USD&limit=30`,
+      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(parts.join(" ") + " -lot -break -box -pack -repack")}&category_ids=261328&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[5..],priceCurrency:USD&limit=50`,
       { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
     );
     if (!browseRes.ok) return [];
@@ -291,21 +304,18 @@ async function fetchEbaySportsPrice(
 
     if (listingPrices.length === 0) return [];
 
-    // Floor-price model: lowest 5 BIN, 15% discount for market estimate
-    // Low = actual lowest BIN (what you could buy it for right now)
+    // Market = lowest BIN × 0.85 (what you'd realistically pay)
     const DISCOUNT = 0.85;
-    const floor = listingPrices.slice(0, 5);
-    const floorMedian = floor[Math.floor(floor.length / 2)];
-    const estimated = Math.round(floorMedian * DISCOUNT * 100) / 100;
-    const low = Math.round(listingPrices[0] * DISCOUNT * 100) / 100;
+    const market = Math.round(listingPrices[0] * DISCOUNT * 100) / 100;
+    const median = listingPrices[Math.floor(listingPrices.length / 2)];
+    const mid = Math.round(median * DISCOUNT * 100) / 100;
     const high = Math.round(listingPrices[listingPrices.length - 1] * DISCOUNT * 100) / 100;
 
-    const prices: Omit<PriceCache, "id" | "fetched_at">[] = [
-      { card_id: card.id, source: "ebay", price_usd: estimated, condition_key: "market" },
-      { card_id: card.id, source: "ebay", price_usd: low, condition_key: "low" },
+    return [
+      { card_id: card.id, source: "ebay", price_usd: market, condition_key: "market" },
+      { card_id: card.id, source: "ebay", price_usd: mid, condition_key: "mid" },
       { card_id: card.id, source: "ebay", price_usd: high, condition_key: "high" },
     ];
-    return prices;
   } catch {
     return [];
   }
@@ -318,10 +328,10 @@ export interface PriceRange {
 }
 
 export function getPriceRange(prices: PriceCache[]): PriceRange {
-  const low = prices.find((p) => p.condition_key === "low")?.price_usd ?? null;
-  const high = prices.find((p) => p.condition_key === "high")?.price_usd ?? null;
   const market = getAveragePrice(prices);
-  return { low, market, high };
+  const mid = prices.find((p) => p.condition_key === "mid")?.price_usd ?? null;
+  const high = prices.find((p) => p.condition_key === "high")?.price_usd ?? null;
+  return { low: market, market: mid ?? market, high };
 }
 
 export function getAveragePrice(prices: PriceCache[]): number | null {
