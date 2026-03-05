@@ -108,14 +108,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ prices: [], query });
     }
 
-    // Floor-price model: lowest 5 BIN, 15% discount for market estimate
-    // Low = actual lowest BIN (what you could buy it for right now)
+    // Floor-price model: lowest 5 BIN, 15% discount on all prices
     const DISCOUNT = 0.85;
     const floor = listingPrices.slice(0, 5);
     const floorMedian = floor[Math.floor(floor.length / 2)];
     const estimated = Math.round(floorMedian * DISCOUNT * 100) / 100;
-    const low = listingPrices[0];
-    const high = listingPrices[listingPrices.length - 1];
+    const low = Math.round(listingPrices[0] * DISCOUNT * 100) / 100;
+    const high = Math.round(listingPrices[listingPrices.length - 1] * DISCOUNT * 100) / 100;
 
     return NextResponse.json({
       prices: [

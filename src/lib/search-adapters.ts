@@ -395,7 +395,7 @@ async function fetchEbayEstimate(
     const floorMedian = floor[Math.floor(floor.length / 2)];
     const estimated = Math.round(floorMedian * DISCOUNT * 100) / 100;
     const low = Math.round(listingPrices[0] * DISCOUNT * 100) / 100;
-    const high = listingPrices[listingPrices.length - 1];
+    const high = Math.round(listingPrices[listingPrices.length - 1] * DISCOUNT * 100) / 100;
 
     return [
       { source: "ebay", price_usd: estimated, condition_key: "market" },

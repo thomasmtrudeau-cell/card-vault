@@ -220,8 +220,8 @@ async function fetchEbayTCGPrice(
     const floor = listingPrices.slice(0, 5);
     const floorMedian = floor[Math.floor(floor.length / 2)];
     const estimated = Math.round(floorMedian * DISCOUNT * 100) / 100;
-    const low = listingPrices[0];
-    const high = listingPrices[listingPrices.length - 1];
+    const low = Math.round(listingPrices[0] * DISCOUNT * 100) / 100;
+    const high = Math.round(listingPrices[listingPrices.length - 1] * DISCOUNT * 100) / 100;
 
     return [
       { card_id: card.id, source: "ebay", price_usd: estimated, condition_key: "market" },
@@ -294,8 +294,8 @@ async function fetchEbaySportsPrice(
     const floor = listingPrices.slice(0, 5);
     const floorMedian = floor[Math.floor(floor.length / 2)];
     const estimated = Math.round(floorMedian * DISCOUNT * 100) / 100;
-    const low = listingPrices[0];
-    const high = listingPrices[listingPrices.length - 1];
+    const low = Math.round(listingPrices[0] * DISCOUNT * 100) / 100;
+    const high = Math.round(listingPrices[listingPrices.length - 1] * DISCOUNT * 100) / 100;
 
     const prices: Omit<PriceCache, "id" | "fetched_at">[] = [
       { card_id: card.id, source: "ebay", price_usd: estimated, condition_key: "market" },
