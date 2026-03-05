@@ -73,7 +73,7 @@ async function fetchPricesFromSource(
     case "pokemontcg":
       return fetchPokemonPrices(card);
     case "tcgdex":
-      return [];
+      return fetchEbayTCGPrice(card);
     case "scryfall":
       return fetchScryfallPrices(card);
     case "ygoprodeck":
@@ -169,6 +169,68 @@ async function fetchYugiohPrices(
       });
   }
   return prices;
+}
+
+// eBay Browse API pricing for Pokemon/TCG cards
+async function fetchEbayTCGPrice(
+  card: Card
+): Promise<Omit<PriceCache, "id" | "fetched_at">[]> {
+  const clientId = process.env.EBAY_CLIENT_ID;
+  const clientSecret = process.env.EBAY_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return [];
+
+  try {
+    const tokenRes = await fetch(
+      "https://api.ebay.com/identity/v1/oauth2/token",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
+        },
+        body: "grant_type=client_credentials&scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope",
+      }
+    );
+    if (!tokenRes.ok) return [];
+    const tokenData = await tokenRes.json();
+
+    const parts: string[] = [card.name, "pokemon card"];
+    if (card.set_name) parts.splice(1, 0, card.set_name);
+    if (card.card_number) parts.push(`#${card.card_number}`);
+
+    const browseRes = await fetch(
+      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(parts.join(" "))}&category_ids=183454&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US&sort=price&limit=25`,
+      { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
+    );
+    if (!browseRes.ok) return [];
+    const browseData = await browseRes.json();
+
+    const listings = browseData.itemSummaries || [];
+    const listingPrices: number[] = listings
+      .map(
+        (item: { price?: { value?: string } }) =>
+          item.price?.value ? parseFloat(item.price.value) : null
+      )
+      .filter((p: number | null): p is number => p !== null && p > 0)
+      .sort((a: number, b: number) => a - b);
+
+    if (listingPrices.length === 0) return [];
+
+    const DISCOUNT = 0.85;
+    const floor = listingPrices.slice(0, 5);
+    const floorMedian = floor[Math.floor(floor.length / 2)];
+    const estimated = Math.round(floorMedian * DISCOUNT * 100) / 100;
+    const low = listingPrices[0];
+    const high = listingPrices[listingPrices.length - 1];
+
+    return [
+      { card_id: card.id, source: "ebay", price_usd: estimated, condition_key: "market" },
+      { card_id: card.id, source: "ebay", price_usd: low, condition_key: "low" },
+      { card_id: card.id, source: "ebay", price_usd: high, condition_key: "high" },
+    ];
+  } catch {
+    return [];
+  }
 }
 
 // eBay Browse API pricing for sports cards (refresh)
