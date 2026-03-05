@@ -377,7 +377,7 @@ export default function AddCardPage() {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && doSearch()}
-                  placeholder={`Search ${CATEGORIES.find((c) => c.value === category)?.label} cards...`}
+                  placeholder={isSportsCategory ? "e.g. LeBron James rookie upper deck #201" : `Search ${CATEGORIES.find((c) => c.value === category)?.label} cards (e.g. pikachu #63)...`}
                   className="flex-1 px-4 py-3 rounded-lg bg-card-bg border border-card-border focus:border-accent focus:outline-none"
                 />
                 <button
