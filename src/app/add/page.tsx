@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { CATEGORIES } from "@/lib/categories";
 import { formatPrice } from "@/lib/format";
 import { getAveragePrice } from "@/lib/price-fetcher";
+import EbayListingPicker from "@/components/EbayListingPicker";
 import type {
   CardCategory,
   SearchResult,
@@ -55,6 +56,7 @@ export default function AddCardPage() {
   const [manualNumber, setManualNumber] = useState("");
   const [manualYear, setManualYear] = useState("");
   const [manualRarity, setManualRarity] = useState("");
+  const [showEbayPicker, setShowEbayPicker] = useState(false);
 
   const isSportsCategory =
     category &&
@@ -134,12 +136,10 @@ export default function AddCardPage() {
       }
       if (selectedCard) {
         const enrichedResult = { ...selectedCard };
-        if (isSportsCategory) {
-          if (manualSet) enrichedResult.set_name = manualSet;
-          if (manualNumber) enrichedResult.card_number = manualNumber;
-          if (manualYear) enrichedResult.year = parseInt(manualYear);
-          if (manualRarity) enrichedResult.rarity = manualRarity;
-        }
+        if (manualSet) enrichedResult.set_name = manualSet;
+        if (manualNumber) enrichedResult.card_number = manualNumber;
+        if (manualYear) enrichedResult.year = parseInt(manualYear);
+        if (manualRarity) enrichedResult.rarity = manualRarity;
         body.searchResult = enrichedResult;
       } else {
         body.manualCard = {
@@ -567,17 +567,17 @@ export default function AddCardPage() {
           )}
 
           <div className="space-y-5">
-            {/* Sports card specifics */}
-            {isSportsCategory && selectedCard && (
+            {/* Card details fields */}
+            {selectedCard && (
               <div className="rounded-xl bg-card-bg border border-card-border p-4 space-y-3">
                 <div className="text-sm font-medium text-muted">Card Details</div>
                 <div>
                   <label className="block text-xs text-muted mb-1">Set Name</label>
                   <input
                     type="text"
-                    value={manualSet}
+                    value={manualSet || selectedCard.set_name || ""}
                     onChange={(e) => setManualSet(e.target.value)}
-                    placeholder="e.g. 2023 Topps Chrome"
+                    placeholder={isSportsCategory ? "e.g. 2023 Topps Chrome" : "e.g. Base Set, Evolving Skies"}
                     className="w-full px-3 py-2 rounded-lg bg-background border border-card-border focus:border-accent focus:outline-none text-sm"
                   />
                 </div>
@@ -586,7 +586,7 @@ export default function AddCardPage() {
                     <label className="block text-xs text-muted mb-1">Year</label>
                     <input
                       type="number"
-                      value={manualYear}
+                      value={manualYear || selectedCard.year || ""}
                       onChange={(e) => setManualYear(e.target.value)}
                       placeholder="2023"
                       className="w-full px-3 py-2 rounded-lg bg-background border border-card-border focus:border-accent focus:outline-none text-sm"
@@ -596,24 +596,45 @@ export default function AddCardPage() {
                     <label className="block text-xs text-muted mb-1">Card #</label>
                     <input
                       type="text"
-                      value={manualNumber}
+                      value={manualNumber || selectedCard.card_number || ""}
                       onChange={(e) => setManualNumber(e.target.value)}
                       placeholder="#123"
                       className="w-full px-3 py-2 rounded-lg bg-background border border-card-border focus:border-accent focus:outline-none text-sm"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-muted mb-1">Parallel</label>
+                    <label className="block text-xs text-muted mb-1">{isSportsCategory ? "Parallel" : "Rarity"}</label>
                     <input
                       type="text"
-                      value={manualRarity}
+                      value={manualRarity || selectedCard.rarity || ""}
                       onChange={(e) => setManualRarity(e.target.value)}
-                      placeholder="Refractor"
+                      placeholder={isSportsCategory ? "Refractor" : "Holo Rare"}
                       className="w-full px-3 py-2 rounded-lg bg-background border border-card-border focus:border-accent focus:outline-none text-sm"
                     />
                   </div>
                 </div>
+                {isSportsCategory && (
+                  <button
+                    type="button"
+                    onClick={() => setShowEbayPicker(true)}
+                    className="w-full py-2 rounded-lg border border-accent text-accent text-sm font-medium hover:bg-accent/10 transition-colors"
+                  >
+                    Find My Card on eBay
+                  </button>
+                )}
               </div>
+            )}
+
+            {/* Find My Card for manual entries (no selectedCard) */}
+            {isSportsCategory && !selectedCard && (
+              <button
+                type="button"
+                onClick={() => setShowEbayPicker(true)}
+                disabled={!manualName.trim()}
+                className="w-full py-2 rounded-lg border border-accent text-accent text-sm font-medium hover:bg-accent/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Find My Card on eBay
+              </button>
             )}
 
             {/* Condition */}
@@ -720,7 +741,7 @@ export default function AddCardPage() {
 
             <button
               onClick={async () => {
-                if (isSportsCategory && selectedCard) {
+                if (selectedCard) {
                   setEstimatingPrice(true);
                   try {
                     const res = await fetch("/api/prices/estimate", {
@@ -728,10 +749,10 @@ export default function AddCardPage() {
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({
                         playerName: selectedCard.name,
-                        setName: manualSet || null,
-                        year: manualYear || null,
-                        cardNumber: manualNumber || null,
-                        parallel: manualRarity || null,
+                        setName: manualSet || selectedCard.set_name || null,
+                        year: manualYear || selectedCard.year || null,
+                        cardNumber: manualNumber || selectedCard.card_number || null,
+                        parallel: manualRarity || selectedCard.rarity || null,
                         category,
                         condition,
                         gradingCompany:
@@ -744,7 +765,7 @@ export default function AddCardPage() {
                       setSelectedCard({
                         ...selectedCard,
                         prices: data.prices,
-                        ...(data.listingImageUrl
+                        ...(isSportsCategory && data.listingImageUrl
                           ? { image_url: data.listingImageUrl }
                           : {}),
                       });
@@ -852,6 +873,24 @@ export default function AddCardPage() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* eBay Listing Picker */}
+      {showEbayPicker && isSportsCategory && (
+        <EbayListingPicker
+          playerName={selectedCard?.name || manualName}
+          setName={manualSet || undefined}
+          year={manualYear || undefined}
+          cardNumber={manualNumber || undefined}
+          category={category!}
+          onSelect={(listing) => {
+            if (selectedCard) {
+              setSelectedCard({ ...selectedCard, image_url: listing.imageUrl });
+            }
+            setShowEbayPicker(false);
+          }}
+          onClose={() => setShowEbayPicker(false)}
+        />
       )}
 
       {/* Bulk confirm step */}
