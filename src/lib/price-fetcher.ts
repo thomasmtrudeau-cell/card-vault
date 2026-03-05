@@ -72,6 +72,8 @@ async function fetchPricesFromSource(
   switch (card.external_source) {
     case "pokemontcg":
       return fetchPokemonPrices(card);
+    case "tcgdex":
+      return [];
     case "scryfall":
       return fetchScryfallPrices(card);
     case "ygoprodeck":

@@ -1,65 +1,29 @@
 import type { SearchResult, CardCategory } from "./types";
 
-// Pokemon TCG adapter (pokemontcg.io)
+// Pokemon TCG adapter (TCGdex — free, no key required)
 async function searchPokemon(query: string): Promise<SearchResult[]> {
   const res = await fetch(
-    `https://api.pokemontcg.io/v2/cards?q=name:"${encodeURIComponent(query)}*"&pageSize=20&orderBy=-set.releaseDate`,
-    { headers: { "X-Api-Key": process.env.POKEMON_TCG_API_KEY || "" } }
+    `https://api.tcgdex.net/v2/en/cards?name=${encodeURIComponent(query)}`
   );
   if (!res.ok) return [];
-  const data = await res.json();
-  return (data.data || []).map(
-    (card: {
-      id: string;
-      name: string;
-      set?: { name: string };
-      number?: string;
-      rarity?: string;
-      images?: { small: string };
-      tcgplayer?: {
-        prices?: Record<
-          string,
-          { market?: number; mid?: number; low?: number }
-        >;
-      };
-    }) => {
-      const prices: SearchResult["prices"] = [];
-      if (card.tcgplayer?.prices) {
-        for (const [key, val] of Object.entries(card.tcgplayer.prices)) {
-          if (val.market)
-            prices.push({
-              source: "tcgplayer",
-              price_usd: val.market,
-              condition_key: `${key}_market`,
-            });
-          if (val.mid)
-            prices.push({
-              source: "tcgplayer",
-              price_usd: val.mid,
-              condition_key: `${key}_mid`,
-            });
-          if (val.low)
-            prices.push({
-              source: "tcgplayer",
-              price_usd: val.low,
-              condition_key: `${key}_low`,
-            });
-        }
-      }
-      return {
-        external_id: card.id,
-        external_source: "pokemontcg",
-        name: card.name,
-        set_name: card.set?.name || null,
-        card_number: card.number || null,
-        year: null,
-        rarity: card.rarity || null,
-        image_url: card.images?.small || null,
-        category: "pokemon" as CardCategory,
-        prices,
-      };
-    }
-  );
+  const data: { id: string; localId: string; name: string; image?: string }[] =
+    await res.json();
+
+  return data
+    .filter((c) => c.image)
+    .slice(0, 20)
+    .map((card) => ({
+      external_id: card.id,
+      external_source: "tcgdex" as const,
+      name: card.name,
+      set_name: null,
+      card_number: card.localId || null,
+      year: null,
+      rarity: null,
+      image_url: `${card.image}/high.webp`,
+      category: "pokemon" as CardCategory,
+      prices: [],
+    }));
 }
 
 // Magic: The Gathering adapter (Scryfall)
@@ -185,7 +149,90 @@ const SPORT_MAP: Record<string, string> = {
   hockey: "Ice Hockey",
 };
 
-// Sports card adapter (TheSportsDB for player data + eBay Browse for pricing)
+// Search eBay directly for sports card listings
+async function searchEbayCards(
+  query: string,
+  category: CardCategory
+): Promise<SearchResult[]> {
+  const clientId = process.env.EBAY_CLIENT_ID;
+  const clientSecret = process.env.EBAY_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return [];
+
+  try {
+    const tokenRes = await fetch(
+      "https://api.ebay.com/identity/v1/oauth2/token",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
+        },
+        body: "grant_type=client_credentials&scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope",
+      }
+    );
+    if (!tokenRes.ok) return [];
+    const tokenData = await tokenRes.json();
+
+    const sportKeyword =
+      category === "football"
+        ? "football"
+        : category === "basketball"
+          ? "basketball"
+          : category === "hockey"
+            ? "hockey"
+            : "baseball";
+    const searchQuery = `${query} ${sportKeyword} card`;
+    const browseRes = await fetch(
+      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(searchQuery)}&category_ids=261328&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US&sort=price&limit=20`,
+      { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
+    );
+    if (!browseRes.ok) return [];
+    const browseData = await browseRes.json();
+
+    const DISCOUNT = 0.85;
+    return (browseData.itemSummaries || [])
+      .filter(
+        (item: { image?: { imageUrl?: string } }) => item.image?.imageUrl
+      )
+      .map(
+        (item: {
+          itemId?: string;
+          title?: string;
+          image?: { imageUrl?: string };
+          price?: { value?: string };
+          itemWebUrl?: string;
+        }) => {
+          const rawPrice = item.price?.value
+            ? parseFloat(item.price.value)
+            : null;
+          const prices: SearchResult["prices"] = [];
+          if (rawPrice) {
+            prices.push({
+              source: "ebay",
+              price_usd: Math.round(rawPrice * DISCOUNT * 100) / 100,
+              condition_key: "market",
+            });
+          }
+          return {
+            external_id: `ebay_${item.itemId || ""}`,
+            external_source: "ebay",
+            name: item.title || "",
+            set_name: null,
+            card_number: null,
+            year: null,
+            rarity: null,
+            image_url: item.image?.imageUrl || null,
+            category,
+            prices,
+          };
+        }
+      );
+  } catch {
+    return [];
+  }
+}
+
+// Sports card adapter (TheSportsDB for player data, eBay fallback)
 async function searchSportsPlayer(
   query: string,
   category: CardCategory
@@ -195,48 +242,55 @@ async function searchSportsPlayer(
   const res = await fetch(
     `https://www.thesportsdb.com/api/v1/json/123/searchplayers.php?p=${encodeURIComponent(playerQuery)}`
   );
-  if (!res.ok) return [];
-  const data = await res.json();
-  if (!data.player) return [];
 
   const targetSport = SPORT_MAP[category];
+  let players: SearchResult[] = [];
 
-  // Filter to matching sport and deduplicate by player name
-  const seen = new Set<string>();
-  const players = (
-    data.player as {
-      idPlayer: string;
-      strPlayer: string;
-      strTeam: string;
-      strSport: string;
-      strThumb: string | null;
-      strCutout: string | null;
-      strPosition: string | null;
-      dateBorn: string | null;
-      strNationality: string | null;
-    }[]
-  )
-    .filter((p) => {
-      if (targetSport && p.strSport !== targetSport) return false;
-      if (seen.has(p.strPlayer)) return false;
-      seen.add(p.strPlayer);
-      return true;
-    })
-    .slice(0, 10);
+  if (res.ok) {
+    const data = await res.json();
+    if (data.player) {
+      const seen = new Set<string>();
+      players = (
+        data.player as {
+          idPlayer: string;
+          strPlayer: string;
+          strTeam: string;
+          strSport: string;
+          strThumb: string | null;
+          strCutout: string | null;
+          strPosition: string | null;
+          dateBorn: string | null;
+          strNationality: string | null;
+        }[]
+      )
+        .filter((p) => {
+          if (targetSport && p.strSport !== targetSport) return false;
+          if (seen.has(p.strPlayer)) return false;
+          seen.add(p.strPlayer);
+          return true;
+        })
+        .slice(0, 10)
+        .map((player) => ({
+          external_id: `sportsdb_${player.idPlayer}`,
+          external_source: "thesportsdb" as const,
+          name: player.strPlayer,
+          set_name: player.strTeam,
+          card_number: null,
+          year: null,
+          rarity: player.strPosition,
+          image_url: player.strCutout || player.strThumb || null,
+          category,
+          prices: [],
+        }));
+    }
+  }
 
-  // Return players without prices — prices fetched later with full card details
-  return players.map((player) => ({
-    external_id: `sportsdb_${player.idPlayer}`,
-    external_source: "thesportsdb",
-    name: player.strPlayer,
-    set_name: player.strTeam,
-    card_number: null,
-    year: null,
-    rarity: player.strPosition,
-    image_url: player.strCutout || player.strThumb || null,
-    category,
-    prices: [],
-  }));
+  // If TheSportsDB found nothing, fall back to eBay card search
+  if (players.length === 0) {
+    return searchEbayCards(query, category);
+  }
+
+  return players;
 }
 
 // eBay Browse API for sports card pricing estimates
