@@ -218,12 +218,26 @@ async function searchEbayCards(
     const wordCount = query.trim().split(/\s+/).length;
     const suffix = wordCount <= 3 ? ` ${sportKeyword} card` : " card";
     const searchQuery = `${query}${suffix} -lot -break -box -pack -repack -case`;
-    const browseRes = await fetch(
+    let browseRes = await fetch(
       `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(searchQuery)}&category_ids=261328&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[5..],priceCurrency:USD&limit=30`,
       { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
     );
     if (!browseRes.ok) return [];
-    const browseData = await browseRes.json();
+    let browseData = await browseRes.json();
+
+    // If no results and query has a # card number, retry without it
+    if (
+      (!browseData.itemSummaries || browseData.itemSummaries.length === 0) &&
+      /#\S+/.test(query)
+    ) {
+      const relaxedQuery = `${query.replace(/#\S+/g, "").trim()}${suffix} -lot -break -box -pack -repack -case`;
+      browseRes = await fetch(
+        `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(relaxedQuery)}&category_ids=261328&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[5..],priceCurrency:USD&limit=30`,
+        { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
+      );
+      if (!browseRes.ok) return [];
+      browseData = await browseRes.json();
+    }
 
     const DISCOUNT = 0.85;
     // Filter out bulk/pick listings by title
