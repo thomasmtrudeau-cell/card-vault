@@ -246,13 +246,18 @@ async function searchEbayCards(
               condition_key: "market",
             });
           }
+          // Try to extract year and card number from eBay title
+          const title = item.title || "";
+          const yearMatch = title.match(/\b(19|20)\d{2}(-\d{2})?\b/);
+          const numberMatch = title.match(/#(\d+)/);
+
           return {
             external_id: `ebay_${item.itemId || ""}`,
             external_source: "ebay",
-            name: item.title || "",
+            name: title,
             set_name: null,
-            card_number: null,
-            year: null,
+            card_number: numberMatch ? numberMatch[1] : null,
+            year: yearMatch ? parseInt(yearMatch[0]) : null,
             rarity: null,
             image_url: item.image?.imageUrl || null,
             category,
@@ -265,65 +270,12 @@ async function searchEbayCards(
   }
 }
 
-// Sports card adapter (TheSportsDB for player data, eBay fallback)
+// Sports card adapter — search eBay directly for actual card listings
 async function searchSportsPlayer(
   query: string,
   category: CardCategory
 ): Promise<SearchResult[]> {
-  // Search TheSportsDB for player info
-  const playerQuery = query.replace(/\s+/g, "_");
-  const res = await fetch(
-    `https://www.thesportsdb.com/api/v1/json/123/searchplayers.php?p=${encodeURIComponent(playerQuery)}`
-  );
-
-  const targetSport = SPORT_MAP[category];
-  let players: SearchResult[] = [];
-
-  if (res.ok) {
-    const data = await res.json();
-    if (data.player) {
-      const seen = new Set<string>();
-      players = (
-        data.player as {
-          idPlayer: string;
-          strPlayer: string;
-          strTeam: string;
-          strSport: string;
-          strThumb: string | null;
-          strCutout: string | null;
-          strPosition: string | null;
-          dateBorn: string | null;
-          strNationality: string | null;
-        }[]
-      )
-        .filter((p) => {
-          if (targetSport && p.strSport !== targetSport) return false;
-          if (seen.has(p.strPlayer)) return false;
-          seen.add(p.strPlayer);
-          return true;
-        })
-        .slice(0, 10)
-        .map((player) => ({
-          external_id: `sportsdb_${player.idPlayer}`,
-          external_source: "thesportsdb" as const,
-          name: player.strPlayer,
-          set_name: null,
-          card_number: null,
-          year: null,
-          rarity: null,
-          image_url: player.strCutout || player.strThumb || null,
-          category,
-          prices: [],
-        }));
-    }
-  }
-
-  // If TheSportsDB found nothing, fall back to eBay card search
-  if (players.length === 0) {
-    return searchEbayCards(query, category);
-  }
-
-  return players;
+  return searchEbayCards(query, category);
 }
 
 // eBay Browse API for sports card pricing estimates
