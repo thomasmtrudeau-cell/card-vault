@@ -271,13 +271,16 @@ async function fetchEbaySportsPrice(
     if (!card.set_name) parts.push("card");
 
     const browseRes = await fetch(
-      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(parts.join(" "))}&category_ids=261328&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US&sort=price&limit=25`,
+      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(parts.join(" ") + " -lot -break -box -pack -repack")}&category_ids=261328&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[5..],priceCurrency:USD&limit=30`,
       { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
     );
     if (!browseRes.ok) return [];
     const browseData = await browseRes.json();
 
-    const listings = browseData.itemSummaries || [];
+    const junkPatterns = /you pick|pick your|choose your|complete your set|lot of|mystery|repack/i;
+    const listings = (browseData.itemSummaries || []).filter(
+      (item: { title?: string }) => !junkPatterns.test(item.title || "")
+    );
     const listingPrices: number[] = listings
       .map(
         (item: { price?: { value?: string } }) =>

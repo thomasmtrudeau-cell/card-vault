@@ -74,13 +74,13 @@ export async function POST(request: NextRequest) {
       if (!setName) parts.push(sportKeyword, "card");
     }
 
-    const query = parts.join(" ");
+    const query = parts.join(" ") + " -lot -break -box -pack -repack";
 
     // 261328 = sports trading cards, 183454 = CCG individual cards
     const categoryId = isTCG ? "183454" : "261328";
 
     const browseRes = await fetch(
-      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&category_ids=${categoryId}&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US&sort=price&limit=25`,
+      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&category_ids=${categoryId}&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[5..],priceCurrency:USD&sort=price&limit=30`,
       { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
     );
     if (!browseRes.ok) {
@@ -88,7 +88,10 @@ export async function POST(request: NextRequest) {
     }
     const browseData = await browseRes.json();
 
-    const listings = browseData.itemSummaries || [];
+    const junkPatterns = /you pick|pick your|choose your|complete your set|lot of|mystery|repack/i;
+    const listings = (browseData.itemSummaries || []).filter(
+      (item: { title?: string }) => !junkPatterns.test(item.title || "")
+    );
 
     // Grab the first listing's image as a representative card image
     const listingImageUrl =

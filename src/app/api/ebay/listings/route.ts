@@ -64,8 +64,9 @@ export async function POST(request: NextRequest) {
     const query = parts.join(" ");
     const categoryId = isTCG ? "183454" : "261328";
 
+    const fullQuery = query + " -lot -break -box -pack -repack";
     const browseRes = await fetch(
-      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&category_ids=${categoryId}&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US&sort=price&limit=20`,
+      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(fullQuery)}&category_ids=${categoryId}&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[5..],priceCurrency:USD&sort=price&limit=25`,
       { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
     );
     if (!browseRes.ok) {
@@ -80,8 +81,9 @@ export async function POST(request: NextRequest) {
       itemWebUrl?: string;
     }
 
+    const junkPatterns = /you pick|pick your|choose your|complete your set|lot of|mystery|repack/i;
     const listings = (browseData.itemSummaries || [])
-      .filter((item: EbayItem) => item.image?.imageUrl)
+      .filter((item: EbayItem) => item.image?.imageUrl && !junkPatterns.test(item.title || ""))
       .map((item: EbayItem) => ({
         title: item.title || "",
         imageUrl: item.image?.imageUrl || "",
