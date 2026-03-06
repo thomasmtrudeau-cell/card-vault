@@ -199,28 +199,35 @@ interface EbayListing {
 const JUNK_PATTERNS = /you pick|pick your|choose your|complete your set|lot of|mystery|repack/i;
 const DISCOUNT = 0.85;
 
-function buildEbayPrices(
-  cardId: string,
-  rawListings: EbayListing[]
-): Omit<PriceCache, "id" | "fetched_at">[] {
-  const listings = rawListings.filter(
-    (item) => !JUNK_PATTERNS.test(item.title || "")
-  );
-
-  // Build sorted price+url pairs
-  const priced = listings
+function filterAndSortListings(rawListings: EbayListing[]) {
+  return rawListings
+    .filter((item) => !JUNK_PATTERNS.test(item.title || ""))
     .map((item) => ({
       price: item.price?.value ? parseFloat(item.price.value) : null,
       url: item.itemWebUrl || null,
     }))
     .filter((p): p is { price: number; url: string | null } => p.price !== null && p.price > 0)
     .sort((a, b) => a.price - b.price);
+}
 
-  if (priced.length === 0) return [];
+function buildEbayPrices(
+  cardId: string,
+  floorListings: EbayListing[],
+  rangeListings: EbayListing[]
+): Omit<PriceCache, "id" | "fetched_at">[] {
+  // Floor query (sort=price) gives us the true cheapest listing
+  const floor = filterAndSortListings(floorListings);
+  // Range query (best match) gives us relevant median/high
+  const range = filterAndSortListings(rangeListings);
 
-  const lowest = priced[0];
-  const medianItem = priced[Math.floor(priced.length / 2)];
-  const highest = priced[priced.length - 1];
+  // Use whichever set has data; prefer floor for market, range for mid/high
+  const all = floor.length > 0 ? floor : range;
+  if (all.length === 0) return [];
+
+  const lowest = floor.length > 0 ? floor[0] : range[0];
+  const rangeForMedian = range.length > 0 ? range : floor;
+  const medianItem = rangeForMedian[Math.floor(rangeForMedian.length / 2)];
+  const highest = rangeForMedian[rangeForMedian.length - 1];
 
   return [
     {
@@ -287,15 +294,19 @@ async function fetchEbayTCGPrice(
     }
     if (!card.set_name) parts.push("pokemon card");
     const query = parts.join(" ") + " -lot -break -box -pack -repack";
+    const baseFilter = "buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[5..],priceCurrency:USD";
+    const headers = { Authorization: `Bearer ${token}` };
 
-    const browseRes = await fetch(
-      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&category_ids=183454&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[5..],priceCurrency:USD&limit=50`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    if (!browseRes.ok) return [];
-    const browseData = await browseRes.json();
+    // Two parallel queries: sort=price for true floor, best-match for range
+    const [floorRes, rangeRes] = await Promise.all([
+      fetch(`https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&category_ids=183454&filter=${baseFilter}&sort=price&limit=20`, { headers }),
+      fetch(`https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&category_ids=183454&filter=${baseFilter}&limit=50`, { headers }),
+    ]);
 
-    return buildEbayPrices(card.id, browseData.itemSummaries || []);
+    const floorData = floorRes.ok ? await floorRes.json() : { itemSummaries: [] };
+    const rangeData = rangeRes.ok ? await rangeRes.json() : { itemSummaries: [] };
+
+    return buildEbayPrices(card.id, floorData.itemSummaries || [], rangeData.itemSummaries || []);
   } catch {
     return [];
   }
@@ -322,14 +333,20 @@ async function fetchEbaySportsPrice(
     }
     if (!card.set_name) parts.push("card");
 
-    const browseRes = await fetch(
-      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(parts.join(" ") + " -lot -break -box -pack -repack")}&category_ids=261328&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[5..],priceCurrency:USD&limit=50`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    if (!browseRes.ok) return [];
-    const browseData = await browseRes.json();
+    const query = parts.join(" ") + " -lot -break -box -pack -repack";
+    const baseFilter = "buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[5..],priceCurrency:USD";
+    const headers = { Authorization: `Bearer ${token}` };
 
-    return buildEbayPrices(card.id, browseData.itemSummaries || []);
+    // Two parallel queries: sort=price for true floor, best-match for range
+    const [floorRes, rangeRes] = await Promise.all([
+      fetch(`https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&category_ids=261328&filter=${baseFilter}&sort=price&limit=20`, { headers }),
+      fetch(`https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&category_ids=261328&filter=${baseFilter}&limit=50`, { headers }),
+    ]);
+
+    const floorData = floorRes.ok ? await floorRes.json() : { itemSummaries: [] };
+    const rangeData = rangeRes.ok ? await rangeRes.json() : { itemSummaries: [] };
+
+    return buildEbayPrices(card.id, floorData.itemSummaries || [], rangeData.itemSummaries || []);
   } catch {
     return [];
   }

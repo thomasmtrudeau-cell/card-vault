@@ -79,45 +79,56 @@ export async function POST(request: NextRequest) {
     // 261328 = sports trading cards, 183454 = CCG individual cards
     const categoryId = isTCG ? "183454" : "261328";
 
-    const browseRes = await fetch(
-      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&category_ids=${categoryId}&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[5..],priceCurrency:USD&limit=50`,
-      { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
-    );
-    if (!browseRes.ok) {
-      return NextResponse.json({ prices: [] });
-    }
-    const browseData = await browseRes.json();
+    const baseFilter = "buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[5..],priceCurrency:USD";
+    const headers = { Authorization: `Bearer ${tokenData.access_token}` };
+
+    // Two parallel queries: sort=price for true floor, best-match for range
+    const [floorRes, rangeRes] = await Promise.all([
+      fetch(`https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&category_ids=${categoryId}&filter=${baseFilter}&sort=price&limit=20`, { headers }),
+      fetch(`https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&category_ids=${categoryId}&filter=${baseFilter}&limit=50`, { headers }),
+    ]);
+
+    const floorData = floorRes.ok ? await floorRes.json() : { itemSummaries: [] };
+    const rangeData = rangeRes.ok ? await rangeRes.json() : { itemSummaries: [] };
 
     const junkPatterns = /you pick|pick your|choose your|complete your set|lot of|mystery|repack/i;
-    const listings = (browseData.itemSummaries || []).filter(
-      (item: { title?: string }) => !junkPatterns.test(item.title || "")
-    );
 
-    // Grab the first listing's image as a representative card image
-    const listingImageUrl =
-      listings.find(
-        (item: { image?: { imageUrl?: string } }) => item.image?.imageUrl
-      )?.image?.imageUrl || null;
+    type EbayItem = { title?: string; price?: { value?: string }; image?: { imageUrl?: string } };
+    const filterJunk = (items: EbayItem[]) =>
+      items.filter((item) => !junkPatterns.test(item.title || ""));
 
-    const listingPrices: number[] = listings
-      .map(
-        (item: { price?: { value?: string } }) =>
-          item.price?.value ? parseFloat(item.price.value) : null
-      )
-      .filter((p: number | null): p is number => p !== null && p > 0)
-      .sort((a: number, b: number) => a - b);
+    const floorListings = filterJunk(floorData.itemSummaries || []);
+    const rangeListings = filterJunk(rangeData.itemSummaries || []);
 
-    if (listingPrices.length === 0) {
+    const DISCOUNT = 0.85;
+
+    const toSorted = (items: EbayItem[]) =>
+      items
+        .map((item) => item.price?.value ? parseFloat(item.price.value) : null)
+        .filter((p): p is number => p !== null && p > 0)
+        .sort((a, b) => a - b);
+
+    const floorPrices = toSorted(floorListings);
+    const rangePrices = toSorted(rangeListings);
+    const allPrices = floorPrices.length > 0 ? floorPrices : rangePrices;
+
+    if (allPrices.length === 0) {
       return NextResponse.json({ prices: [], query });
     }
 
-    // Market = lowest BIN × 0.85 (what you'd realistically pay)
-    // Low/High from the full range for context
-    const DISCOUNT = 0.85;
-    const market = Math.round(listingPrices[0] * DISCOUNT * 100) / 100;
-    const median = listingPrices[Math.floor(listingPrices.length / 2)];
+    // Market = true cheapest BIN from sort=price query
+    const cheapest = floorPrices.length > 0 ? floorPrices[0] : rangePrices[0];
+    const rangeForMedian = rangePrices.length > 0 ? rangePrices : floorPrices;
+    const median = rangeForMedian[Math.floor(rangeForMedian.length / 2)];
+
+    const market = Math.round(cheapest * DISCOUNT * 100) / 100;
     const mid = Math.round(median * DISCOUNT * 100) / 100;
-    const high = Math.round(listingPrices[listingPrices.length - 1] * DISCOUNT * 100) / 100;
+    const high = Math.round(rangeForMedian[rangeForMedian.length - 1] * DISCOUNT * 100) / 100;
+
+    // Grab listing image from the range query (more relevant)
+    const allListings = rangeListings.length > 0 ? rangeListings : floorListings;
+    const listingImageUrl =
+      allListings.find((item: EbayItem) => item.image?.imageUrl)?.image?.imageUrl || null;
 
     return NextResponse.json({
       prices: [
@@ -126,7 +137,7 @@ export async function POST(request: NextRequest) {
         { source: "ebay", price_usd: high, condition_key: "high" },
       ],
       query,
-      listingCount: listings.length,
+      listingCount: allListings.length,
       listingImageUrl,
     });
   } catch {
