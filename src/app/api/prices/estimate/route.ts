@@ -10,6 +10,8 @@ export async function POST(request: NextRequest) {
     cardNumber,
     parallel,
     variant,
+    isFirstEdition,
+    isAuto,
     category,
     condition,
     gradingCompany,
@@ -45,13 +47,18 @@ export async function POST(request: NextRequest) {
     const tokenData = await tokenRes.json();
 
     // Build a specific search query with ALL card details + grading
+    // Strip leading # from card number to avoid double-# (user may type "#29")
+    const cleanNumber = cardNumber ? String(cardNumber).replace(/^#+/, "") : null;
+
     const parts: string[] = [];
     if (year) parts.push(String(year));
     if (setName) parts.push(setName);
     parts.push(playerName);
-    if (cardNumber) parts.push(`#${cardNumber}`);
+    if (cleanNumber) parts.push(`#${cleanNumber}`);
     if (variant) parts.push(variant);
     if (parallel) parts.push(parallel);
+    if (isFirstEdition) parts.push("1st edition");
+    if (isAuto) parts.push("auto");
     if (condition === "graded" && gradingCompany) {
       parts.push(gradingCompany);
       if (grade) parts.push(String(grade));
@@ -79,7 +86,7 @@ export async function POST(request: NextRequest) {
     // 261328 = sports trading cards, 183454 = CCG individual cards
     const categoryId = isTCG ? "183454" : "261328";
 
-    const baseFilter = "buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[5..],priceCurrency:USD";
+    const baseFilter = "buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[1..],priceCurrency:USD";
     const headers = { Authorization: `Bearer ${tokenData.access_token}` };
 
     // Two parallel queries: sort=price for true floor, best-match for range
@@ -114,32 +121,33 @@ export async function POST(request: NextRequest) {
       const missing = nameWords.filter((w: string) => !t.includes(w));
       if (missing.length > nameWords.length * 0.3) return false;
       // If card is NOT 1st edition, filter out 1st edition listings
-      if (!variant || !/1st\s*edition/i.test(variant)) {
+      if (!isFirstEdition && (!variant || !/1st\s*edition/i.test(variant))) {
         if (/1st\s*edition/i.test(t)) return false;
       }
       // If searching for graded, reject listings explicitly marked "Ungraded"
-      // Many sellers list graded cards as "New (Other)" so we can't require "Graded"
       if (condition === "graded" && gradingCompany && item.condition) {
         if (item.condition.toLowerCase().trim().startsWith("ungraded")) return false;
       }
-      // Grade + company validation: require specific company + grade match
-      // Reject listings graded by a different company (e.g. CGC 10 when looking for PSA 10)
+      // If searching for raw, exclude graded listings (they inflate the price)
+      if (condition === "raw") {
+        const gradedPattern = /\b(?:psa|bgs|cgc|sgc)\s*\d+(?:\.\d+)?\b/i;
+        if (gradedPattern.test(t)) return false;
+      }
+      // Grade + company validation for graded cards
       if (targetGrade && condition === "graded" && gradingCompany) {
         const targetCompany = gradingCompany.toLowerCase();
+        // Require the listing to mention the target grading company
+        const companyPattern = new RegExp(`\\b${targetCompany}\\b`, "i");
+        if (!companyPattern.test(t)) return false;
+        // Require the exact company + grade combo (e.g. "PSA 10")
         const exactPattern = new RegExp(`\\b${targetCompany}\\s*${targetGrade}\\b`, "i");
-        const hasExactMatch = exactPattern.test(t);
+        if (!exactPattern.test(t)) return false;
+        // Reject listings that also mention a different company grade
         const allCompanies = ["psa", "bgs", "cgc", "sgc"];
         const otherCompanies = allCompanies.filter((c) => c !== targetCompany);
         const otherPattern = new RegExp(`\\b(?:${otherCompanies.join("|")})\\s*\\d+(?:\\.\\d+)?\\b`, "i");
         const hasDifferentCompany = otherPattern.test(t);
-        if (hasDifferentCompany && !hasExactMatch) return false;
-
-        const gradePattern = /\b(?:psa|bgs|cgc|sgc)\s*(\d+(?:\.\d+)?)\b/gi;
-        let match;
-        while ((match = gradePattern.exec(t)) !== null) {
-          const mentioned = parseFloat(match[1]);
-          if (!isNaN(mentioned) && mentioned < targetGrade) return false;
-        }
+        if (hasDifferentCompany) return false;
       }
       return true;
     };
@@ -159,7 +167,58 @@ export async function POST(request: NextRequest) {
     const rangePrices = toSorted(rangeListings);
     const allPrices = floorPrices.length > 0 ? floorPrices : rangePrices;
 
+    // If no results, retry with a simpler query (just name + set + category keyword)
     if (allPrices.length === 0) {
+      const simpleParts: string[] = [];
+      if (setName) simpleParts.push(setName);
+      simpleParts.push(playerName);
+      if (cleanNumber) simpleParts.push(`#${cleanNumber}`);
+      if (condition === "graded" && gradingCompany) {
+        simpleParts.push(gradingCompany);
+        if (grade) simpleParts.push(String(grade));
+      }
+      if (isTCG && !setName) {
+        simpleParts.push(category === "pokemon" ? "pokemon card" : category === "magic" ? "mtg card" : "yugioh card");
+      }
+      const simpleQuery = simpleParts.join(" ") + " -lot -break -box -pack -repack -japanese";
+
+      if (simpleQuery !== query) {
+        const [sFloorRes, sRangeRes] = await Promise.all([
+          fetch(`https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(simpleQuery)}&category_ids=${categoryId}&filter=${baseFilter}&sort=price&limit=20`, { headers }),
+          fetch(`https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(simpleQuery)}&category_ids=${categoryId}&filter=${baseFilter}&limit=50`, { headers }),
+        ]);
+        const sFloorData = sFloorRes.ok ? await sFloorRes.json() : { itemSummaries: [] };
+        const sRangeData = sRangeRes.ok ? await sRangeRes.json() : { itemSummaries: [] };
+
+        const sFloorListings = (sFloorData.itemSummaries || []).filter(isValid);
+        const sRangeListings = (sRangeData.itemSummaries || []).filter(isValid);
+        const sFloorPrices = toSorted(sFloorListings);
+        const sRangePrices = toSorted(sRangeListings);
+        const sAllPrices = sFloorPrices.length > 0 ? sFloorPrices : sRangePrices;
+
+        if (sAllPrices.length > 0) {
+          const sCheapest = sFloorPrices.length > 0 ? sFloorPrices[0] : sRangePrices[0];
+          const sRangeForMedian = sRangePrices.length > 0 ? sRangePrices : sFloorPrices;
+          const sMedian = sRangeForMedian[Math.floor(sRangeForMedian.length / 2)];
+          const sMarket = Math.round(sCheapest * DISCOUNT * 100) / 100;
+          const sMid = Math.round(sMedian * DISCOUNT * 100) / 100;
+          const sHigh = Math.round(sRangeForMedian[sRangeForMedian.length - 1] * DISCOUNT * 100) / 100;
+          const sAll = sRangeListings.length > 0 ? sRangeListings : sFloorListings;
+          const sImageUrl = sAll.find((item: EbayItem) => item.image?.imageUrl)?.image?.imageUrl || null;
+
+          return NextResponse.json({
+            prices: [
+              { source: "ebay", price_usd: sMarket, condition_key: "market" },
+              { source: "ebay", price_usd: sMid, condition_key: "mid" },
+              { source: "ebay", price_usd: sHigh, condition_key: "high" },
+            ],
+            query: simpleQuery,
+            listingCount: sAll.length,
+            listingImageUrl: sImageUrl,
+          });
+        }
+      }
+
       return NextResponse.json({ prices: [], query });
     }
 

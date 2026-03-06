@@ -95,7 +95,11 @@ async function fetchPricesFromSource(
       }
       return fetchEbaySportsPrice(card, context);
     default:
-      return [];
+      // Manual entries or unknown sources — try eBay based on category
+      if (TCG_CATEGORIES.includes(card.category)) {
+        return fetchEbayTCGPrice(card, context);
+      }
+      return fetchEbaySportsPrice(card, context);
   }
 }
 
@@ -397,36 +401,64 @@ async function fetchEbayTCGPrice(
     const token = await getEbayToken();
     if (!token) return [];
 
+    const cleanNumber = card.card_number?.replace(/^#+/, "") || null;
+
     const parts: string[] = [];
     if (card.set_name) parts.push(card.set_name);
     parts.push(card.name);
-    if (card.card_number) parts.push(`#${card.card_number}`);
+    if (cleanNumber) parts.push(`#${cleanNumber}`);
     if (context?.gradingCompany) {
       parts.push(String(context.gradingCompany));
       if (context.grade) parts.push(String(context.grade));
     }
-    if (!card.set_name) parts.push("pokemon card");
+    if (!card.set_name) {
+      const catKeyword = card.category === "pokemon" ? "pokemon card" : card.category === "magic" ? "mtg card" : "yugioh card";
+      parts.push(catKeyword);
+    }
     const query = parts.join(" ") + " -lot -break -box -pack -repack -japanese";
-    const baseFilter = "buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[5..],priceCurrency:USD";
+    const categoryId = card.category === "pokemon" ? "183454" : card.category === "magic" ? "183454" : "183454";
+    const baseFilter = "buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[1..],priceCurrency:USD";
     const headers = { Authorization: `Bearer ${token}` };
+
+    const filterCtx: FilterContext = {
+      gradingCompany: context?.gradingCompany,
+      grade: context?.grade,
+      edition: card.rarity && /1st\s*edition/i.test(card.rarity) ? "1st edition" : undefined,
+      cardName: card.name,
+    };
 
     // Two parallel queries: sort=price for true floor, best-match for range
     const [floorRes, rangeRes] = await Promise.all([
-      fetch(`https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&category_ids=183454&filter=${baseFilter}&sort=price&limit=20`, { headers }),
-      fetch(`https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&category_ids=183454&filter=${baseFilter}&limit=50`, { headers }),
+      fetch(`https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&category_ids=${categoryId}&filter=${baseFilter}&sort=price&limit=20`, { headers }),
+      fetch(`https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&category_ids=${categoryId}&filter=${baseFilter}&limit=50`, { headers }),
     ]);
 
     const floorData = floorRes.ok ? await floorRes.json() : { itemSummaries: [] };
     const rangeData = rangeRes.ok ? await rangeRes.json() : { itemSummaries: [] };
 
-    const filterCtx: FilterContext = {
-      gradingCompany: context?.gradingCompany,
-      grade: context?.grade,
-      // If rarity contains "1st edition", keep 1st ed listings; otherwise filter them out
-      edition: card.rarity && /1st\s*edition/i.test(card.rarity) ? "1st edition" : undefined,
-      cardName: card.name,
-    };
-    return buildEbayPrices(card.id, floorData.itemSummaries || [], rangeData.itemSummaries || [], filterCtx, query);
+    const result = buildEbayPrices(card.id, floorData.itemSummaries || [], rangeData.itemSummaries || [], filterCtx, query);
+    if (result.length > 0) return result;
+
+    // Retry with simpler query (just name + set + grading)
+    const simpleParts: string[] = [];
+    if (card.set_name) simpleParts.push(card.set_name);
+    simpleParts.push(card.name);
+    if (cleanNumber) simpleParts.push(`#${cleanNumber}`);
+    if (context?.gradingCompany) {
+      simpleParts.push(String(context.gradingCompany));
+      if (context.grade) simpleParts.push(String(context.grade));
+    }
+    const simpleQuery = simpleParts.join(" ") + " -lot -break -box -pack -repack -japanese";
+    if (simpleQuery === query) return [];
+
+    const [sFloorRes, sRangeRes] = await Promise.all([
+      fetch(`https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(simpleQuery)}&category_ids=${categoryId}&filter=${baseFilter}&sort=price&limit=20`, { headers }),
+      fetch(`https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(simpleQuery)}&category_ids=${categoryId}&filter=${baseFilter}&limit=50`, { headers }),
+    ]);
+    const sFloorData = sFloorRes.ok ? await sFloorRes.json() : { itemSummaries: [] };
+    const sRangeData = sRangeRes.ok ? await sRangeRes.json() : { itemSummaries: [] };
+
+    return buildEbayPrices(card.id, sFloorData.itemSummaries || [], sRangeData.itemSummaries || [], filterCtx, simpleQuery);
   } catch {
     return [];
   }
@@ -441,11 +473,13 @@ async function fetchEbaySportsPrice(
     const token = await getEbayToken();
     if (!token) return [];
 
+    const cleanNumber = card.card_number?.replace(/^#+/, "") || null;
+
     const parts: string[] = [];
     if (card.year) parts.push(String(card.year));
     if (card.set_name) parts.push(card.set_name);
     parts.push(card.name);
-    if (card.card_number) parts.push(`#${card.card_number}`);
+    if (cleanNumber) parts.push(`#${cleanNumber}`);
     if (card.rarity) parts.push(card.rarity);
     if (context?.gradingCompany) {
       parts.push(String(context.gradingCompany));
@@ -454,8 +488,14 @@ async function fetchEbaySportsPrice(
     if (!card.set_name) parts.push("card");
 
     const query = parts.join(" ") + " -lot -break -box -pack -repack -japanese";
-    const baseFilter = "buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[5..],priceCurrency:USD";
+    const baseFilter = "buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[1..],priceCurrency:USD";
     const headers = { Authorization: `Bearer ${token}` };
+
+    const filterCtx: FilterContext = {
+      gradingCompany: context?.gradingCompany,
+      grade: context?.grade,
+      cardName: card.name,
+    };
 
     // Two parallel queries: sort=price for true floor, best-match for range
     const [floorRes, rangeRes] = await Promise.all([
@@ -466,12 +506,29 @@ async function fetchEbaySportsPrice(
     const floorData = floorRes.ok ? await floorRes.json() : { itemSummaries: [] };
     const rangeData = rangeRes.ok ? await rangeRes.json() : { itemSummaries: [] };
 
-    const filterCtx: FilterContext = {
-      gradingCompany: context?.gradingCompany,
-      grade: context?.grade,
-      cardName: card.name,
-    };
-    return buildEbayPrices(card.id, floorData.itemSummaries || [], rangeData.itemSummaries || [], filterCtx, query);
+    const result = buildEbayPrices(card.id, floorData.itemSummaries || [], rangeData.itemSummaries || [], filterCtx, query);
+    if (result.length > 0) return result;
+
+    // Retry with simpler query (name + set + grading only, drop year/number/rarity)
+    const simpleParts: string[] = [];
+    if (card.set_name) simpleParts.push(card.set_name);
+    simpleParts.push(card.name);
+    if (context?.gradingCompany) {
+      simpleParts.push(String(context.gradingCompany));
+      if (context.grade) simpleParts.push(String(context.grade));
+    }
+    if (!card.set_name) simpleParts.push("card");
+    const simpleQuery = simpleParts.join(" ") + " -lot -break -box -pack -repack -japanese";
+    if (simpleQuery === query) return [];
+
+    const [sFloorRes, sRangeRes] = await Promise.all([
+      fetch(`https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(simpleQuery)}&category_ids=261328&filter=${baseFilter}&sort=price&limit=20`, { headers }),
+      fetch(`https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(simpleQuery)}&category_ids=261328&filter=${baseFilter}&limit=50`, { headers }),
+    ]);
+    const sFloorData = sFloorRes.ok ? await sFloorRes.json() : { itemSummaries: [] };
+    const sRangeData = sRangeRes.ok ? await sRangeRes.json() : { itemSummaries: [] };
+
+    return buildEbayPrices(card.id, sFloorData.itemSummaries || [], sRangeData.itemSummaries || [], filterCtx, simpleQuery);
   } catch {
     return [];
   }

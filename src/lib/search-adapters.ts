@@ -1,6 +1,7 @@
 import type { SearchResult, CardCategory } from "./types";
 
 // Pokemon TCG adapter (TCGdex — free, no key required)
+// Falls back to pokemontcg.io API when TCGdex returns no results
 // Supports "squirtle #63" syntax to filter by card number
 async function searchPokemon(query: string): Promise<SearchResult[]> {
   // Parse optional card number from query (e.g. "squirtle #63" or "squirtle 63")
@@ -8,17 +9,39 @@ async function searchPokemon(query: string): Promise<SearchResult[]> {
   const name = numberMatch ? query.slice(0, numberMatch.index).trim() : query;
   const cardNumber = numberMatch ? numberMatch[1] : null;
 
+  // Try TCGdex first
+  const results = await searchPokemonTCGdex(name, cardNumber);
+  if (results.length > 0) return results;
+
+  // Fallback to pokemontcg.io (better fuzzy matching for EX, GX, V, etc.)
+  return searchPokemonTCGIO(name, cardNumber);
+}
+
+async function searchPokemonTCGdex(name: string, cardNumber: string | null): Promise<SearchResult[]> {
   const params = new URLSearchParams({ name });
   if (cardNumber) params.set("localId", cardNumber);
 
-  const res = await fetch(
+  let res = await fetch(
     `https://api.tcgdex.net/v2/en/cards?${params}`
   );
   if (!res.ok) return [];
-  const data: { id: string; localId: string; name: string; image?: string }[] =
+  let data: { id: string; localId: string; name: string; image?: string }[] =
     await res.json();
 
+  // If no results with card number, retry without it and filter client-side
+  if (data.length === 0 && cardNumber) {
+    const retryParams = new URLSearchParams({ name });
+    res = await fetch(`https://api.tcgdex.net/v2/en/cards?${retryParams}`);
+    if (res.ok) {
+      const allData: typeof data = await res.json();
+      // Filter to cards matching the number
+      const filtered = allData.filter((c) => c.localId === cardNumber);
+      data = filtered.length > 0 ? filtered : allData;
+    }
+  }
+
   const top = data.filter((c) => c.image).slice(0, 20);
+  if (top.length === 0) return [];
 
   // Fetch details in parallel (set name, rarity, year) with a 4s timeout
   const controller = new AbortController();
@@ -57,6 +80,79 @@ async function searchPokemon(query: string): Promise<SearchResult[]> {
       prices: [],
     };
   });
+}
+
+async function searchPokemonTCGIO(name: string, cardNumber: string | null): Promise<SearchResult[]> {
+  const apiKey = process.env.POKEMON_TCG_API_KEY || "";
+  // Build query: name:"heatran" handles EX/GX/V variations better
+  let q = `name:"${name}"`;
+  if (cardNumber) q += ` number:${cardNumber}`;
+
+  const headers: Record<string, string> = {};
+  if (apiKey) headers["X-Api-Key"] = apiKey;
+
+  let res = await fetch(
+    `https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(q)}&pageSize=20&orderBy=-set.releaseDate`,
+    { headers }
+  );
+  if (!res.ok) return [];
+  let data = await res.json();
+  let cards = data.data || [];
+
+  // If no results with card number, retry without it
+  if (cards.length === 0 && cardNumber) {
+    const retryQ = `name:"${name}"`;
+    res = await fetch(
+      `https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(retryQ)}&pageSize=20&orderBy=-set.releaseDate`,
+      { headers }
+    );
+    if (res.ok) {
+      data = await res.json();
+      const allCards = data.data || [];
+      // Filter to matching number if possible
+      const filtered = allCards.filter((c: { number?: string }) => c.number === cardNumber);
+      cards = filtered.length > 0 ? filtered : allCards;
+    }
+  }
+
+  return cards.map(
+    (card: {
+      id: string;
+      name: string;
+      number?: string;
+      set?: { name?: string; releaseDate?: string };
+      rarity?: string;
+      images?: { small?: string; large?: string };
+      tcgplayer?: { prices?: Record<string, { market?: number }> };
+    }) => {
+      const prices: SearchResult["prices"] = [];
+      if (card.tcgplayer?.prices) {
+        for (const [key, val] of Object.entries(card.tcgplayer.prices)) {
+          if (val.market) {
+            prices.push({
+              source: "tcgplayer",
+              price_usd: val.market,
+              condition_key: `${key}_market`,
+            });
+          }
+        }
+      }
+      return {
+        external_id: card.id,
+        external_source: "pokemontcg" as const,
+        name: card.name,
+        set_name: card.set?.name || null,
+        card_number: card.number || null,
+        year: card.set?.releaseDate
+          ? parseInt(card.set.releaseDate.substring(0, 4))
+          : null,
+        rarity: card.rarity || null,
+        image_url: card.images?.large || card.images?.small || null,
+        category: "pokemon" as CardCategory,
+        prices,
+      };
+    }
+  );
 }
 
 // Magic: The Gathering adapter (Scryfall)
