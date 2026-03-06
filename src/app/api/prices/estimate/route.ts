@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
       if (!setName) parts.push(sportKeyword, "card");
     }
 
-    const query = parts.join(" ") + " -lot -break -box -pack -repack -japanese -JP";
+    const query = parts.join(" ") + " -lot -break -box -pack -repack -japanese";
 
     // 261328 = sports trading cards, 183454 = CCG individual cards
     const categoryId = isTCG ? "183454" : "261328";
@@ -112,10 +112,10 @@ export async function POST(request: NextRequest) {
       if (!variant || !/1st\s*edition/i.test(variant)) {
         if (/1st\s*edition/i.test(t)) return false;
       }
-      // If searching for graded, require eBay condition to start with "Graded"
-      // "Ungraded - Near mint" contains "graded" as substring, so check prefix
+      // If searching for graded, reject listings explicitly marked "Ungraded"
+      // Many sellers list graded cards as "New (Other)" so we can't require "Graded"
       if (condition === "graded" && gradingCompany && item.condition) {
-        if (!item.condition.toLowerCase().trim().startsWith("graded")) return false;
+        if (item.condition.toLowerCase().trim().startsWith("ungraded")) return false;
       }
       // Grade + company validation: require specific company + grade match
       // Reject listings graded by a different company (e.g. CGC 10 when looking for PSA 10)

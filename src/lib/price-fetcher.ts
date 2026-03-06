@@ -249,11 +249,11 @@ function isListingValid(listing: EbayListing, ctx?: FilterContext): boolean {
     if (/1st\s*edition/i.test(t)) return false;
   }
 
-  // If searching for graded cards, require eBay condition to start with "Graded"
-  // "Ungraded - Near mint" contains "graded" as a substring, so we check the prefix
+  // If searching for graded cards, reject listings explicitly marked "Ungraded"
+  // Many sellers list graded cards as "New (Other)" so we can't require "Graded"
   if (ctx?.gradingCompany && listing.condition) {
     const cond = listing.condition.toLowerCase().trim();
-    if (!cond.startsWith("graded")) return false;
+    if (cond.startsWith("ungraded")) return false;
   }
 
   // Grade + company validation: if searching for "PSA 10", require that
@@ -313,8 +313,13 @@ function buildEbayPrices(
   cardId: string,
   floorListings: EbayListing[],
   rangeListings: EbayListing[],
-  ctx?: FilterContext
+  ctx?: FilterContext,
+  searchQuery?: string
 ): Omit<PriceCache, "id" | "fetched_at">[] {
+  // Fallback URL: eBay search results for this query
+  const fallbackUrl = searchQuery
+    ? `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(searchQuery)}&_sacat=0&LH_BIN=1`
+    : null;
   // Floor query (sort=price) gives us the true cheapest listing
   const floor = filterAndSortListings(floorListings, ctx);
   // Range query (best match) gives us relevant median/high
@@ -335,21 +340,21 @@ function buildEbayPrices(
       source: "ebay",
       price_usd: Math.round(lowest.price * DISCOUNT * 100) / 100,
       condition_key: "market",
-      listing_url: lowest.url,
+      listing_url: lowest.url || fallbackUrl,
     },
     {
       card_id: cardId,
       source: "ebay",
       price_usd: Math.round(medianItem.price * DISCOUNT * 100) / 100,
       condition_key: "mid",
-      listing_url: medianItem.url,
+      listing_url: medianItem.url || fallbackUrl,
     },
     {
       card_id: cardId,
       source: "ebay",
       price_usd: Math.round(highest.price * DISCOUNT * 100) / 100,
       condition_key: "high",
-      listing_url: highest.url,
+      listing_url: highest.url || fallbackUrl,
     },
   ];
 }
@@ -393,7 +398,7 @@ async function fetchEbayTCGPrice(
       if (context.grade) parts.push(String(context.grade));
     }
     if (!card.set_name) parts.push("pokemon card");
-    const query = parts.join(" ") + " -lot -break -box -pack -repack -japanese -JP";
+    const query = parts.join(" ") + " -lot -break -box -pack -repack -japanese";
     const baseFilter = "buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[5..],priceCurrency:USD";
     const headers = { Authorization: `Bearer ${token}` };
 
@@ -413,7 +418,7 @@ async function fetchEbayTCGPrice(
       edition: card.rarity && /1st\s*edition/i.test(card.rarity) ? "1st edition" : undefined,
       cardName: card.name,
     };
-    return buildEbayPrices(card.id, floorData.itemSummaries || [], rangeData.itemSummaries || [], filterCtx);
+    return buildEbayPrices(card.id, floorData.itemSummaries || [], rangeData.itemSummaries || [], filterCtx, query);
   } catch {
     return [];
   }
@@ -440,7 +445,7 @@ async function fetchEbaySportsPrice(
     }
     if (!card.set_name) parts.push("card");
 
-    const query = parts.join(" ") + " -lot -break -box -pack -repack -japanese -JP";
+    const query = parts.join(" ") + " -lot -break -box -pack -repack -japanese";
     const baseFilter = "buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[5..],priceCurrency:USD";
     const headers = { Authorization: `Bearer ${token}` };
 
@@ -458,7 +463,7 @@ async function fetchEbaySportsPrice(
       grade: context?.grade,
       cardName: card.name,
     };
-    return buildEbayPrices(card.id, floorData.itemSummaries || [], rangeData.itemSummaries || [], filterCtx);
+    return buildEbayPrices(card.id, floorData.itemSummaries || [], rangeData.itemSummaries || [], filterCtx, query);
   } catch {
     return [];
   }
