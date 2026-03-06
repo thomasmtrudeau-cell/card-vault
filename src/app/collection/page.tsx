@@ -10,6 +10,22 @@ import { getAveragePrice, getPriceRange } from "@/lib/price-fetcher";
 import type { CollectionItem, CardCategory } from "@/lib/types";
 
 type SortKey = "date" | "value_high" | "value_low" | "name" | "grade";
+type ConditionFilter = "all" | "graded" | "raw";
+
+const SPORTS_CATS: CardCategory[] = ["baseball", "football", "basketball", "hockey"];
+const TCG_CATS: CardCategory[] = ["pokemon", "magic", "yugioh"];
+
+// Category order for default grouping
+const CATEGORY_ORDER: CardCategory[] = [
+  ...SPORTS_CATS,
+  ...TCG_CATS,
+];
+
+function getCategoryGroup(cat: CardCategory): string {
+  if (SPORTS_CATS.includes(cat)) return "Sports Cards";
+  if (TCG_CATS.includes(cat)) return "TCG Cards";
+  return "Other";
+}
 
 export default function CollectionPage() {
   const [items, setItems] = useState<CollectionItem[]>([]);
@@ -17,6 +33,7 @@ export default function CollectionPage() {
   const [categoryFilter, setCategoryFilter] = useState<CardCategory | "all">(
     "all"
   );
+  const [conditionFilter, setConditionFilter] = useState<ConditionFilter>("all");
   const [sortBy, setSortBy] = useState<SortKey>("date");
   const [searchQuery, setSearchQuery] = useState("");
   const [refreshingAll, setRefreshingAll] = useState(false);
@@ -36,21 +53,27 @@ export default function CollectionPage() {
     fetchCollection();
   }, [fetchCollection]);
 
-  // Client-side search filter
+  // Client-side search + condition filter
   const filtered = useMemo(() => {
-    if (!searchQuery.trim()) return items;
-    const q = searchQuery.toLowerCase();
     return items.filter((item) => {
       const card = item.card;
       if (!card) return false;
-      return (
-        card.name.toLowerCase().includes(q) ||
-        (card.set_name && card.set_name.toLowerCase().includes(q)) ||
-        (card.card_number && card.card_number.toLowerCase().includes(q)) ||
-        (item.notes && item.notes.toLowerCase().includes(q))
-      );
+      // Condition filter
+      if (conditionFilter === "graded" && item.condition !== "graded") return false;
+      if (conditionFilter === "raw" && item.condition === "graded") return false;
+      // Search filter
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        return (
+          card.name.toLowerCase().includes(q) ||
+          (card.set_name && card.set_name.toLowerCase().includes(q)) ||
+          (card.card_number && card.card_number.toLowerCase().includes(q)) ||
+          (item.notes && item.notes.toLowerCase().includes(q))
+        );
+      }
+      return true;
     });
-  }, [items, searchQuery]);
+  }, [items, searchQuery, conditionFilter]);
 
   const sorted = [...filtered].sort((a, b) => {
     switch (sortBy) {
@@ -69,12 +92,29 @@ export default function CollectionPage() {
       case "grade":
         return (b.grade || 0) - (a.grade || 0);
       case "date":
-      default:
-        return (
-          new Date(b.date_added).getTime() - new Date(a.date_added).getTime()
-        );
+      default: {
+        // Group by condition (graded first), then by value within each group
+        const gradedA = a.condition === "graded" ? 0 : 1;
+        const gradedB = b.condition === "graded" ? 0 : 1;
+        if (gradedA !== gradedB) return gradedA - gradedB;
+        // Within same condition: by value (high to low)
+        const va3 = getAveragePrice(a.prices || []) || 0;
+        const vb3 = getAveragePrice(b.prices || []) || 0;
+        return vb3 - va3;
+      }
     }
   });
+
+  // Build section groups for rendering
+  const sections = useMemo(() => {
+    if (sortBy !== "date") return null; // Only show sections for default sort
+    const graded = sorted.filter((i) => i.condition === "graded");
+    const ungraded = sorted.filter((i) => i.condition !== "graded");
+    const groups: { label: string; items: typeof sorted }[] = [];
+    if (graded.length > 0) groups.push({ label: "Graded", items: graded });
+    if (ungraded.length > 0) groups.push({ label: "Ungraded", items: ungraded });
+    return groups;
+  }, [sorted, sortBy]);
 
   const exportCSV = () => {
     const headers = [
@@ -173,7 +213,7 @@ export default function CollectionPage() {
       </div>
 
       {/* Search + Filters */}
-      <div className="flex flex-wrap gap-3 mb-6">
+      <div className="flex flex-wrap gap-3 mb-4">
         <input
           type="text"
           value={searchQuery}
@@ -200,12 +240,36 @@ export default function CollectionPage() {
           onChange={(e) => setSortBy(e.target.value as SortKey)}
           className="px-3 py-2 rounded-lg bg-card-bg border border-card-border text-sm focus:outline-none focus:border-accent"
         >
-          <option value="date">Newest First</option>
+          <option value="date">Default</option>
           <option value="value_high">Value: High → Low</option>
           <option value="value_low">Value: Low → High</option>
           <option value="name">Name A-Z</option>
           <option value="grade">Grade: High → Low</option>
         </select>
+      </div>
+
+      {/* Condition filter tabs */}
+      <div className="flex gap-2 mb-6">
+        {(["all", "graded", "raw"] as ConditionFilter[]).map((f) => (
+          <button
+            key={f}
+            onClick={() => setConditionFilter(f)}
+            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+              conditionFilter === f
+                ? "bg-accent text-white"
+                : "bg-card-bg border border-card-border text-muted hover:text-foreground"
+            }`}
+          >
+            {f === "all" ? "All" : f === "graded" ? "Graded" : "Raw"}
+            {f !== "all" && (
+              <span className="ml-1.5 text-xs opacity-75">
+                {items.filter((i) =>
+                  f === "graded" ? i.condition === "graded" : i.condition !== "graded"
+                ).length}
+              </span>
+            )}
+          </button>
+        ))}
       </div>
 
       {refreshResult && (
@@ -244,7 +308,73 @@ export default function CollectionPage() {
             </Link>
           )}
         </div>
+      ) : sections ? (
+        /* Sectioned view (default sort) */
+        <div className="space-y-8">
+          {sections.map((section) => (
+            <div key={section.label}>
+              <h2 className="text-sm font-bold uppercase tracking-wide text-muted mb-3">
+                {section.label}
+                <span className="ml-2 text-xs font-normal">({section.items.length})</span>
+              </h2>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                {section.items.map((item) => {
+                  const range = getPriceRange(item.prices || []);
+                  return (
+                    <Link
+                      href={`/card/${item.id}`}
+                      key={item.id}
+                      className="group rounded-xl bg-card-bg border border-card-border hover:border-accent transition-colors overflow-hidden"
+                    >
+                      <div className="aspect-[2.5/3.5] relative bg-background flex items-center justify-center">
+                        {item.card?.image_url ? (
+                          <Image
+                            src={item.card.image_url}
+                            alt={item.card?.name || "Card"}
+                            fill
+                            className="object-contain p-2"
+                            unoptimized
+                          />
+                        ) : (
+                          <span className="text-4xl">
+                            {getCategoryIcon(item.card?.category as CardCategory)}
+                          </span>
+                        )}
+                      </div>
+                      <div className="p-3">
+                        <div className="text-sm font-medium leading-tight truncate">
+                          {item.card?.name}
+                        </div>
+                        <div className="text-xs text-muted truncate mt-0.5">
+                          {item.card?.set_name}
+                        </div>
+                        <div className="flex items-center justify-end mt-2">
+                          <div className="text-right">
+                            <div className="text-xs text-success font-medium">
+                              {formatPrice(range.market)}
+                            </div>
+                            {range.low && range.high && range.low !== range.high && (
+                              <div className="text-[10px] text-muted leading-tight">
+                                {formatPrice(range.low)}–{formatPrice(range.high)}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        {item.condition === "graded" && (
+                          <div className="text-xs text-muted mt-1">
+                            {item.grading_company} {item.grade}
+                          </div>
+                        )}
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
       ) : (
+        /* Flat grid (when using a non-default sort) */
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
           {sorted.map((item) => {
             const range = getPriceRange(item.prices || []);
@@ -265,9 +395,7 @@ export default function CollectionPage() {
                     />
                   ) : (
                     <span className="text-4xl">
-                      {getCategoryIcon(
-                        item.card?.category as CardCategory
-                      )}
+                      {getCategoryIcon(item.card?.category as CardCategory)}
                     </span>
                   )}
                 </div>
