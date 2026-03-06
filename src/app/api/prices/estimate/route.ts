@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
     const nonEnglishPatterns = /\bjapanese\b|\bjpn\b|\bkorean\b|\bchinese\b|\bfrench\b|\bgerman\b|\bitalian\b|\bspanish\b|\bportuguese\b|\bdutch\b/i;
     const targetGrade = (condition === "graded" && grade) ? parseFloat(String(grade)) : null;
 
-    type EbayItem = { title?: string; price?: { value?: string }; image?: { imageUrl?: string } };
+    type EbayItem = { title?: string; price?: { value?: string }; image?: { imageUrl?: string }; condition?: string };
 
     const isValid = (item: EbayItem) => {
       const t = (item.title || "").toLowerCase();
@@ -106,6 +106,10 @@ export async function POST(request: NextRequest) {
       // If card is NOT 1st edition, filter out 1st edition listings
       if (!variant || !/1st\s*edition/i.test(variant)) {
         if (/1st\s*edition/i.test(t)) return false;
+      }
+      // If searching for graded, require eBay condition to be "Graded"
+      if (condition === "graded" && gradingCompany && item.condition) {
+        if (!item.condition.toLowerCase().includes("graded")) return false;
       }
       // Filter listings with a lower grade than target
       if (targetGrade) {

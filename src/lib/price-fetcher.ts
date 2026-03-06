@@ -194,6 +194,7 @@ interface EbayListing {
   title?: string;
   price?: { value?: string };
   itemWebUrl?: string;
+  condition?: string; // e.g. "Graded - PSA 10", "Ungraded - Near mint or better"
 }
 
 interface FilterContext {
@@ -215,7 +216,8 @@ const GRADE_VALUES: Record<string, number> = {
   "7.5": 7.5, "7": 7, "6.5": 6.5, "6": 6, "5": 5,
 };
 
-function isListingValid(title: string, ctx?: FilterContext): boolean {
+function isListingValid(listing: EbayListing, ctx?: FilterContext): boolean {
+  const title = listing.title || "";
   if (!title) return false;
   const t = title.toLowerCase();
 
@@ -232,6 +234,13 @@ function isListingValid(title: string, ctx?: FilterContext): boolean {
   // (they're much more expensive and would inflate the price)
   if (ctx && !ctx.edition) {
     if (/1st\s*edition/i.test(t)) return false;
+  }
+
+  // If searching for graded cards, require eBay condition to be "Graded"
+  // This catches SEO gamers who stuff "PSA 10" in titles but sell ungraded cards
+  if (ctx?.gradingCompany && listing.condition) {
+    const cond = listing.condition.toLowerCase();
+    if (!cond.includes("graded")) return false;
   }
 
   // Grade validation: if we're looking for PSA 10, filter out listings
@@ -259,7 +268,7 @@ function isListingValid(title: string, ctx?: FilterContext): boolean {
 
 function filterAndSortListings(rawListings: EbayListing[], ctx?: FilterContext) {
   return rawListings
-    .filter((item) => isListingValid(item.title || "", ctx))
+    .filter((item) => isListingValid(item, ctx))
     .map((item) => ({
       price: item.price?.value ? parseFloat(item.price.value) : null,
       url: item.itemWebUrl || null,
