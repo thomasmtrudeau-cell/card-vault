@@ -94,7 +94,9 @@ export async function POST(request: NextRequest) {
     const junkPatterns = /you pick|pick your|choose your|complete your set|lot of|mystery|repack/i;
     const bulkPatterns = /\d+\/\d+\/\d+/;
     const nonEnglishPatterns = /\bjapanese\b|\bjpn\b|\bkorean\b|\bchinese\b|\bfrench\b|\bgerman\b|\bitalian\b|\bspanish\b|\bportuguese\b|\bdutch\b/i;
+    const noveltyPatterns = /\bkeychain\b|\bslabbie\b|\breplica\b|\bcustom\b|\bproxy\b|\bsticker\b|\bmagnet\b|\bpin\b|\bposter\b|\bdisplay\b|\bstand\b|\bfridge\b|\btoy\b|\bplush\b|\bfigur/i;
     const targetGrade = (condition === "graded" && grade) ? parseFloat(String(grade)) : null;
+    const playerNameLower = playerName.toLowerCase();
 
     type EbayItem = { title?: string; price?: { value?: string }; image?: { imageUrl?: string }; condition?: string };
 
@@ -103,16 +105,30 @@ export async function POST(request: NextRequest) {
       if (junkPatterns.test(t)) return false;
       if (bulkPatterns.test(item.title || "")) return false;
       if (nonEnglishPatterns.test(t)) return false;
+      if (noveltyPatterns.test(t)) return false;
+      // Listing title must contain the card/player name
+      if (!t.includes(playerNameLower)) return false;
       // If card is NOT 1st edition, filter out 1st edition listings
       if (!variant || !/1st\s*edition/i.test(variant)) {
         if (/1st\s*edition/i.test(t)) return false;
       }
-      // If searching for graded, require eBay condition to be "Graded"
+      // If searching for graded, require eBay condition to start with "Graded"
+      // "Ungraded - Near mint" contains "graded" as substring, so check prefix
       if (condition === "graded" && gradingCompany && item.condition) {
-        if (!item.condition.toLowerCase().includes("graded")) return false;
+        if (!item.condition.toLowerCase().trim().startsWith("graded")) return false;
       }
-      // Filter listings with a lower grade than target
-      if (targetGrade) {
+      // Grade + company validation: require specific company + grade match
+      // Reject listings graded by a different company (e.g. CGC 10 when looking for PSA 10)
+      if (targetGrade && condition === "graded" && gradingCompany) {
+        const targetCompany = gradingCompany.toLowerCase();
+        const exactPattern = new RegExp(`\\b${targetCompany}\\s*${targetGrade}\\b`, "i");
+        const hasExactMatch = exactPattern.test(t);
+        const allCompanies = ["psa", "bgs", "cgc", "sgc"];
+        const otherCompanies = allCompanies.filter((c) => c !== targetCompany);
+        const otherPattern = new RegExp(`\\b(?:${otherCompanies.join("|")})\\s*\\d+(?:\\.\\d+)?\\b`, "i");
+        const hasDifferentCompany = otherPattern.test(t);
+        if (hasDifferentCompany && !hasExactMatch) return false;
+
         const gradePattern = /\b(?:psa|bgs|cgc|sgc)\s*(\d+(?:\.\d+)?)\b/gi;
         let match;
         while ((match = gradePattern.exec(t)) !== null) {

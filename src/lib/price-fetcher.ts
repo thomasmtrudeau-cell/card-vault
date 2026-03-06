@@ -201,6 +201,7 @@ interface FilterContext {
   gradingCompany?: string;
   grade?: number | string;
   edition?: string; // e.g. "1st edition" or empty for unlimited
+  cardName?: string; // card/player name — listing title must contain this
 }
 
 const JUNK_PATTERNS = /you pick|pick your|choose your|complete your set|lot of|mystery|repack/i;
@@ -208,6 +209,8 @@ const JUNK_PATTERNS = /you pick|pick your|choose your|complete your set|lot of|m
 const BULK_PATTERNS = /\d+\/\d+\/\d+/;
 // Non-English Pokemon cards (Japanese, Korean, Chinese, etc.)
 const NON_ENGLISH_PATTERNS = /\bjapanese\b|\bjpn\b|\bkorean\b|\bchinese\b|\bfrench\b|\bgerman\b|\bitalian\b|\bspanish\b|\bportuguese\b|\bdutch\b/i;
+// Novelty/accessory items that aren't actual cards
+const NOVELTY_PATTERNS = /\bkeychain\b|\bslabbie\b|\breplica\b|\bcustom\b|\bproxy\b|\bsticker\b|\bmagnet\b|\bpin\b|\bposter\b|\bdisplay\b|\bstand\b|\bfridge\b|\btoy\b|\bplush\b|\bfigur/i;
 const DISCOUNT = 0.85;
 
 // Grade values for comparison (higher = better)
@@ -230,36 +233,64 @@ function isListingValid(listing: EbayListing, ctx?: FilterContext): boolean {
   // Filter non-English Pokemon cards
   if (NON_ENGLISH_PATTERNS.test(t)) return false;
 
+  // Filter novelty/accessory items (keychains, replicas, etc.)
+  if (NOVELTY_PATTERNS.test(t)) return false;
+
+  // Listing title must contain the card/player name
+  if (ctx?.cardName) {
+    const nameLower = ctx.cardName.toLowerCase();
+    if (!t.includes(nameLower)) return false;
+  }
+
   // If card is NOT 1st edition, filter out 1st edition listings
   // (they're much more expensive and would inflate the price)
   if (ctx && !ctx.edition) {
     if (/1st\s*edition/i.test(t)) return false;
   }
 
-  // If searching for graded cards, require eBay condition to be "Graded"
-  // This catches SEO gamers who stuff "PSA 10" in titles but sell ungraded cards
+  // If searching for graded cards, require eBay condition to start with "Graded"
+  // "Ungraded - Near mint" contains "graded" as a substring, so we check the prefix
   if (ctx?.gradingCompany && listing.condition) {
-    const cond = listing.condition.toLowerCase();
-    if (!cond.includes("graded")) return false;
+    const cond = listing.condition.toLowerCase().trim();
+    if (!cond.startsWith("graded")) return false;
   }
 
-  // Grade validation: if we're looking for PSA 10, filter out listings
-  // that mention a LOWER grade from any grading company
+  // Grade + company validation: if searching for "PSA 10", require that
+  // the listing title contains "PSA 10" specifically. Reject listings
+  // graded by a different company (e.g. "CGC 10" when looking for PSA 10)
+  // since cross-company prices differ significantly.
   if (ctx?.gradingCompany && ctx?.grade) {
+    const targetCompany = ctx.gradingCompany.toLowerCase();
     const targetGrade = parseFloat(String(ctx.grade));
     if (!isNaN(targetGrade)) {
-      // Look for grade mentions in the title like "PSA 9", "BGS 8.5", "CGC 9"
+      // Check if the listing mentions our exact company + grade
+      const exactPattern = new RegExp(
+        `\\b${targetCompany}\\s*${targetGrade}\\b`,
+        "i"
+      );
+      const hasExactMatch = exactPattern.test(t);
+
+      // Check if a DIFFERENT grading company is the primary grader
+      const allCompanies = ["psa", "bgs", "cgc", "sgc"];
+      const otherCompanies = allCompanies.filter((c) => c !== targetCompany);
+      const otherPattern = new RegExp(
+        `\\b(?:${otherCompanies.join("|")})\\s*\\d+(?:\\.\\d+)?\\b`,
+        "i"
+      );
+      const hasDifferentCompany = otherPattern.test(t);
+
+      // If a different company's grade appears and our exact match doesn't, reject
+      if (hasDifferentCompany && !hasExactMatch) return false;
+
+      // Also reject if any mentioned grade (from any company) is lower than target
       const gradePattern = /\b(?:psa|bgs|cgc|sgc)\s*(\d+(?:\.\d+)?)\b/gi;
       let match;
-      let hasLowerGrade = false;
       while ((match = gradePattern.exec(t)) !== null) {
         const mentionedGrade = parseFloat(match[1]);
         if (!isNaN(mentionedGrade) && mentionedGrade < targetGrade) {
-          hasLowerGrade = true;
-          break;
+          return false;
         }
       }
-      if (hasLowerGrade) return false;
     }
   }
 
@@ -379,6 +410,7 @@ async function fetchEbayTCGPrice(
       grade: context?.grade,
       // If rarity contains "1st edition", keep 1st ed listings; otherwise filter them out
       edition: card.rarity && /1st\s*edition/i.test(card.rarity) ? "1st edition" : undefined,
+      cardName: card.name,
     };
     return buildEbayPrices(card.id, floorData.itemSummaries || [], rangeData.itemSummaries || [], filterCtx);
   } catch {
@@ -423,6 +455,7 @@ async function fetchEbaySportsPrice(
     const filterCtx: FilterContext = {
       gradingCompany: context?.gradingCompany,
       grade: context?.grade,
+      cardName: card.name,
     };
     return buildEbayPrices(card.id, floorData.itemSummaries || [], rangeData.itemSummaries || [], filterCtx);
   } catch {
