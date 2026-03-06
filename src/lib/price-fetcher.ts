@@ -237,10 +237,18 @@ function isListingValid(listing: EbayListing, ctx?: FilterContext): boolean {
   // Filter novelty/accessory items (keychains, replicas, etc.)
   if (NOVELTY_PATTERNS.test(t)) return false;
 
-  // Listing title must contain the card/player name
+  // Listing title must contain the key words from the card/player name
+  // We check individual words (3+ chars) rather than exact substring since
+  // eBay titles rearrange words (e.g. "LeBron James Upper Deck" vs "Upper Deck LeBron James")
   if (ctx?.cardName) {
-    const nameLower = ctx.cardName.toLowerCase();
-    if (!t.includes(nameLower)) return false;
+    const nameWords = ctx.cardName
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, "") // strip punctuation
+      .split(/\s+/)
+      .filter((w) => w.length >= 3);
+    // Require all significant words to appear in the title
+    const missing = nameWords.filter((w) => !t.includes(w));
+    if (missing.length > nameWords.length * 0.3) return false; // allow up to 30% missing words
   }
 
   // If card is NOT 1st edition, filter out 1st edition listings

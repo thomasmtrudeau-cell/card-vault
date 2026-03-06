@@ -106,8 +106,13 @@ export async function POST(request: NextRequest) {
       if (bulkPatterns.test(item.title || "")) return false;
       if (nonEnglishPatterns.test(t)) return false;
       if (noveltyPatterns.test(t)) return false;
-      // Listing title must contain the card/player name
-      if (!t.includes(playerNameLower)) return false;
+      // Listing title must contain the key words from the card/player name
+      const nameWords = playerNameLower
+        .replace(/[^a-z0-9\s]/g, "")
+        .split(/\s+/)
+        .filter((w: string) => w.length >= 3);
+      const missing = nameWords.filter((w: string) => !t.includes(w));
+      if (missing.length > nameWords.length * 0.3) return false;
       // If card is NOT 1st edition, filter out 1st edition listings
       if (!variant || !/1st\s*edition/i.test(variant)) {
         if (/1st\s*edition/i.test(t)) return false;
