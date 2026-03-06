@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
       if (!setName) parts.push(sportKeyword, "card");
     }
 
-    const query = parts.join(" ") + " -lot -break -box -pack -repack";
+    const query = parts.join(" ") + " -lot -break -box -pack -repack -japanese -JP";
 
     // 261328 = sports trading cards, 183454 = CCG individual cards
     const categoryId = isTCG ? "183454" : "261328";
@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
 
     const junkPatterns = /you pick|pick your|choose your|complete your set|lot of|mystery|repack/i;
     const bulkPatterns = /\d+\/\d+\/\d+/;
-    const nonEnglishPatterns = /\bjapanese\b|\bjpn\b|\bkorean\b|\bchinese\b|\bfrench\b|\bgerman\b|\bitalian\b|\bspanish\b|\bportuguese\b|\bdutch\b/i;
+    const nonEnglishPatterns = /\bjapanese\b|\bjpn\b|\bjp\b|\bkorean\b|\bchinese\b|\bfrench\b|\bgerman\b|\bitalian\b|\bspanish\b|\bportuguese\b|\bdutch\b|\bsv2a\b|\bs\d+a\b|\bsm\d+a\b|\bxy\d+a\b/i;
     const noveltyPatterns = /\bkeychain\b|\bslabbie\b|\breplica\b|\bcustom\b|\bproxy\b|\bsticker\b|\bmagnet\b|\bpin\b|\bposter\b|\bdisplay\b|\bstand\b|\bfridge\b|\btoy\b|\bplush\b|\bfigur/i;
     const targetGrade = (condition === "graded" && grade) ? parseFloat(String(grade)) : null;
     const playerNameLower = playerName.toLowerCase();

@@ -208,7 +208,8 @@ const JUNK_PATTERNS = /you pick|pick your|choose your|complete your set|lot of|m
 // Multi-card bulk listings: "44/46/63/102"
 const BULK_PATTERNS = /\d+\/\d+\/\d+/;
 // Non-English Pokemon cards (Japanese, Korean, Chinese, etc.)
-const NON_ENGLISH_PATTERNS = /\bjapanese\b|\bjpn\b|\bkorean\b|\bchinese\b|\bfrench\b|\bgerman\b|\bitalian\b|\bspanish\b|\bportuguese\b|\bdutch\b/i;
+// Includes Japanese set codes (SV2a, s12a, s8a, SM12a, etc.) and common JP indicators
+const NON_ENGLISH_PATTERNS = /\bjapanese\b|\bjpn\b|\bjp\b|\bkorean\b|\bchinese\b|\bfrench\b|\bgerman\b|\bitalian\b|\bspanish\b|\bportuguese\b|\bdutch\b|\bsv2a\b|\bs\d+a\b|\bsm\d+a\b|\bxy\d+a\b|\bchi[-\s]?yu\b/i;
 // Novelty/accessory items that aren't actual cards
 const NOVELTY_PATTERNS = /\bkeychain\b|\bslabbie\b|\breplica\b|\bcustom\b|\bproxy\b|\bsticker\b|\bmagnet\b|\bpin\b|\bposter\b|\bdisplay\b|\bstand\b|\bfridge\b|\btoy\b|\bplush\b|\bfigur/i;
 const DISCOUNT = 0.85;
@@ -392,7 +393,7 @@ async function fetchEbayTCGPrice(
       if (context.grade) parts.push(String(context.grade));
     }
     if (!card.set_name) parts.push("pokemon card");
-    const query = parts.join(" ") + " -lot -break -box -pack -repack";
+    const query = parts.join(" ") + " -lot -break -box -pack -repack -japanese -JP";
     const baseFilter = "buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[5..],priceCurrency:USD";
     const headers = { Authorization: `Bearer ${token}` };
 
@@ -439,7 +440,7 @@ async function fetchEbaySportsPrice(
     }
     if (!card.set_name) parts.push("card");
 
-    const query = parts.join(" ") + " -lot -break -box -pack -repack";
+    const query = parts.join(" ") + " -lot -break -box -pack -repack -japanese -JP";
     const baseFilter = "buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[5..],priceCurrency:USD";
     const headers = { Authorization: `Bearer ${token}` };
 
