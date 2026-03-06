@@ -196,12 +196,65 @@ interface EbayListing {
   itemWebUrl?: string;
 }
 
+interface FilterContext {
+  gradingCompany?: string;
+  grade?: number | string;
+  edition?: string; // e.g. "1st edition" or empty for unlimited
+}
+
 const JUNK_PATTERNS = /you pick|pick your|choose your|complete your set|lot of|mystery|repack/i;
+// Multi-card bulk listings: "44/46/63/102", "charmander squirtle bulbasaur"
+const BULK_PATTERNS = /\d+\/\d+\/\d+/;
 const DISCOUNT = 0.85;
 
-function filterAndSortListings(rawListings: EbayListing[]) {
+// Grade values for comparison (higher = better)
+const GRADE_VALUES: Record<string, number> = {
+  "10": 10, "9.5": 9.5, "9": 9, "8.5": 8.5, "8": 8,
+  "7.5": 7.5, "7": 7, "6.5": 6.5, "6": 6, "5": 5,
+};
+
+function isListingValid(title: string, ctx?: FilterContext): boolean {
+  if (!title) return false;
+  const t = title.toLowerCase();
+
+  // Filter junk patterns
+  if (JUNK_PATTERNS.test(t)) return false;
+
+  // Filter bulk/multi-card listings
+  if (BULK_PATTERNS.test(title)) return false;
+
+  // If card is NOT 1st edition, filter out 1st edition listings
+  // (they're much more expensive and would inflate the price)
+  if (ctx && !ctx.edition) {
+    if (/1st\s*edition/i.test(t)) return false;
+  }
+
+  // Grade validation: if we're looking for PSA 10, filter out listings
+  // that mention a LOWER grade from any grading company
+  if (ctx?.gradingCompany && ctx?.grade) {
+    const targetGrade = parseFloat(String(ctx.grade));
+    if (!isNaN(targetGrade)) {
+      // Look for grade mentions in the title like "PSA 9", "BGS 8.5", "CGC 9"
+      const gradePattern = /\b(?:psa|bgs|cgc|sgc)\s*(\d+(?:\.\d+)?)\b/gi;
+      let match;
+      let hasLowerGrade = false;
+      while ((match = gradePattern.exec(t)) !== null) {
+        const mentionedGrade = parseFloat(match[1]);
+        if (!isNaN(mentionedGrade) && mentionedGrade < targetGrade) {
+          hasLowerGrade = true;
+          break;
+        }
+      }
+      if (hasLowerGrade) return false;
+    }
+  }
+
+  return true;
+}
+
+function filterAndSortListings(rawListings: EbayListing[], ctx?: FilterContext) {
   return rawListings
-    .filter((item) => !JUNK_PATTERNS.test(item.title || ""))
+    .filter((item) => isListingValid(item.title || "", ctx))
     .map((item) => ({
       price: item.price?.value ? parseFloat(item.price.value) : null,
       url: item.itemWebUrl || null,
@@ -213,12 +266,13 @@ function filterAndSortListings(rawListings: EbayListing[]) {
 function buildEbayPrices(
   cardId: string,
   floorListings: EbayListing[],
-  rangeListings: EbayListing[]
+  rangeListings: EbayListing[],
+  ctx?: FilterContext
 ): Omit<PriceCache, "id" | "fetched_at">[] {
   // Floor query (sort=price) gives us the true cheapest listing
-  const floor = filterAndSortListings(floorListings);
+  const floor = filterAndSortListings(floorListings, ctx);
   // Range query (best match) gives us relevant median/high
-  const range = filterAndSortListings(rangeListings);
+  const range = filterAndSortListings(rangeListings, ctx);
 
   // Use whichever set has data; prefer floor for market, range for mid/high
   const all = floor.length > 0 ? floor : range;
@@ -306,7 +360,13 @@ async function fetchEbayTCGPrice(
     const floorData = floorRes.ok ? await floorRes.json() : { itemSummaries: [] };
     const rangeData = rangeRes.ok ? await rangeRes.json() : { itemSummaries: [] };
 
-    return buildEbayPrices(card.id, floorData.itemSummaries || [], rangeData.itemSummaries || []);
+    const filterCtx: FilterContext = {
+      gradingCompany: context?.gradingCompany,
+      grade: context?.grade,
+      // If rarity contains "1st edition", keep 1st ed listings; otherwise filter them out
+      edition: card.rarity && /1st\s*edition/i.test(card.rarity) ? "1st edition" : undefined,
+    };
+    return buildEbayPrices(card.id, floorData.itemSummaries || [], rangeData.itemSummaries || [], filterCtx);
   } catch {
     return [];
   }
@@ -346,7 +406,11 @@ async function fetchEbaySportsPrice(
     const floorData = floorRes.ok ? await floorRes.json() : { itemSummaries: [] };
     const rangeData = rangeRes.ok ? await rangeRes.json() : { itemSummaries: [] };
 
-    return buildEbayPrices(card.id, floorData.itemSummaries || [], rangeData.itemSummaries || []);
+    const filterCtx: FilterContext = {
+      gradingCompany: context?.gradingCompany,
+      grade: context?.grade,
+    };
+    return buildEbayPrices(card.id, floorData.itemSummaries || [], rangeData.itemSummaries || [], filterCtx);
   } catch {
     return [];
   }

@@ -92,13 +92,33 @@ export async function POST(request: NextRequest) {
     const rangeData = rangeRes.ok ? await rangeRes.json() : { itemSummaries: [] };
 
     const junkPatterns = /you pick|pick your|choose your|complete your set|lot of|mystery|repack/i;
+    const bulkPatterns = /\d+\/\d+\/\d+/;
+    const targetGrade = (condition === "graded" && grade) ? parseFloat(String(grade)) : null;
 
     type EbayItem = { title?: string; price?: { value?: string }; image?: { imageUrl?: string } };
-    const filterJunk = (items: EbayItem[]) =>
-      items.filter((item) => !junkPatterns.test(item.title || ""));
 
-    const floorListings = filterJunk(floorData.itemSummaries || []);
-    const rangeListings = filterJunk(rangeData.itemSummaries || []);
+    const isValid = (item: EbayItem) => {
+      const t = (item.title || "").toLowerCase();
+      if (junkPatterns.test(t)) return false;
+      if (bulkPatterns.test(item.title || "")) return false;
+      // If card is NOT 1st edition, filter out 1st edition listings
+      if (!variant || !/1st\s*edition/i.test(variant)) {
+        if (/1st\s*edition/i.test(t)) return false;
+      }
+      // Filter listings with a lower grade than target
+      if (targetGrade) {
+        const gradePattern = /\b(?:psa|bgs|cgc|sgc)\s*(\d+(?:\.\d+)?)\b/gi;
+        let match;
+        while ((match = gradePattern.exec(t)) !== null) {
+          const mentioned = parseFloat(match[1]);
+          if (!isNaN(mentioned) && mentioned < targetGrade) return false;
+        }
+      }
+      return true;
+    };
+
+    const floorListings = (floorData.itemSummaries || []).filter(isValid);
+    const rangeListings = (rangeData.itemSummaries || []).filter(isValid);
 
     const DISCOUNT = 0.85;
 
