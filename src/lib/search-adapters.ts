@@ -530,6 +530,86 @@ async function fetchEbayEstimate(
   }
 }
 
+// eBay single-item fetch — used when user pastes an eBay URL
+const EBAY_CATEGORY_MAP: Record<number, CardCategory> = {
+  183454: "pokemon",
+  183456: "magic",
+  183461: "yugioh",
+  261328: "baseball",
+  261329: "football",
+  261330: "basketball",
+  261331: "hockey",
+};
+
+export async function fetchEbayItem(
+  itemId: string,
+  category: CardCategory
+): Promise<SearchResult[]> {
+  const clientId = process.env.EBAY_CLIENT_ID;
+  const clientSecret = process.env.EBAY_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return [];
+
+  try {
+    const tokenRes = await fetch(
+      "https://api.ebay.com/identity/v1/oauth2/token",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
+        },
+        body: "grant_type=client_credentials&scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope",
+      }
+    );
+    if (!tokenRes.ok) return [];
+    const tokenData = await tokenRes.json();
+
+    const itemRes = await fetch(
+      `https://api.ebay.com/buy/browse/v1/item/v1|${itemId}|0`,
+      { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
+    );
+    if (!itemRes.ok) return [];
+    const item = await itemRes.json();
+
+    const title = item.title || "";
+    const yearMatch = title.match(/\b(19|20)\d{2}(-\d{2})?\b/);
+    const numberMatch = title.match(/#(\d+)/);
+
+    // Infer category from eBay's category ID if available
+    const ebayCatId = item.categoryId ? parseInt(item.categoryId) : null;
+    const inferredCategory =
+      (ebayCatId && EBAY_CATEGORY_MAP[ebayCatId]) || category;
+
+    const DISCOUNT = 0.85;
+    const rawPrice = item.price?.value ? parseFloat(item.price.value) : null;
+    const prices: SearchResult["prices"] = [];
+    if (rawPrice) {
+      prices.push({
+        source: "ebay",
+        price_usd: Math.round(rawPrice * DISCOUNT * 100) / 100,
+        condition_key: "market",
+      });
+    }
+
+    return [
+      {
+        external_id: `ebay_${itemId}`,
+        external_source: "ebay",
+        name: title,
+        set_name: null,
+        card_number: numberMatch ? numberMatch[1] : null,
+        year: yearMatch ? parseInt(yearMatch[0]) : null,
+        rarity: null,
+        image_url: item.image?.imageUrl || null,
+        category: inferredCategory,
+        prices,
+      },
+    ];
+  } catch {
+    return [];
+  }
+}
+
 export async function searchCards(
   category: CardCategory,
   query: string

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { searchCards } from "@/lib/search-adapters";
+import { searchCards, fetchEbayItem } from "@/lib/search-adapters";
 import type { CardCategory } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +27,13 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    // Detect eBay URL paste — extract item ID and fetch that specific listing
+    const ebayMatch = query.match(/ebay\.com\/itm\/(?:.*\/)?(\d+)/);
+    if (ebayMatch) {
+      const results = await fetchEbayItem(ebayMatch[1], category);
+      return NextResponse.json({ results });
+    }
+
     const results = await searchCards(category, query.trim());
     return NextResponse.json({ results });
   } catch {

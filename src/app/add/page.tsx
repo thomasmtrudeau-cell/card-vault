@@ -34,6 +34,7 @@ export default function AddCardPage() {
   const [gradingCompany, setGradingCompany] = useState<GradingCompany>("PSA");
   const [grade, setGrade] = useState<string>("10");
   const [quantity, setQuantity] = useState(1);
+  const [isAuto, setIsAuto] = useState(false);
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [estimatingPrice, setEstimatingPrice] = useState(false);
@@ -57,8 +58,11 @@ export default function AddCardPage() {
   const [manualYear, setManualYear] = useState("");
   const [manualRarity, setManualRarity] = useState("");
   const [manualVariant, setManualVariant] = useState("");
+  const [isFirstEdition, setIsFirstEdition] = useState(false);
   const [showEbayPicker, setShowEbayPicker] = useState(false);
   const [showManualEntry, setShowManualEntry] = useState(false);
+  const [ebayUrl, setEbayUrl] = useState("");
+  const [ebayUrlLoading, setEbayUrlLoading] = useState(false);
 
   const isSportsCategory =
     category &&
@@ -86,6 +90,24 @@ export default function AddCardPage() {
     }
     setSearching(false);
   }, [category, searchQuery]);
+
+  const doEbayUrlLookup = useCallback(async () => {
+    if (!category || !ebayUrl.trim()) return;
+    const match = ebayUrl.match(/ebay\.com\/itm\/(?:.*\/)?(\d+)/);
+    if (!match) return;
+    setEbayUrlLoading(true);
+    try {
+      const res = await fetch(
+        `/api/search?category=${category}&q=${encodeURIComponent(ebayUrl.trim())}`
+      );
+      const data = await res.json();
+      setSearchResults(data.results || []);
+      setEbayUrl("");
+    } catch {
+      setSearchResults([]);
+    }
+    setEbayUrlLoading(false);
+  }, [category, ebayUrl]);
 
   const checkDuplicate = async (result: SearchResult) => {
     try {
@@ -164,11 +186,20 @@ export default function AddCardPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
+      // Build notes with tags
+      let finalNotes = notes.trim();
+      const tags: string[] = [];
+      if (isFirstEdition) tags.push("[1st Edition]");
+      if (isAuto) tags.push("[Auto]");
+      if (tags.length > 0) {
+        finalNotes = finalNotes ? `${tags.join(" ")} ${finalNotes}` : tags.join(" ");
+      }
+
       const body: Record<string, unknown> = {
         owner,
         condition,
         quantity,
-        notes: notes || null,
+        notes: finalNotes || null,
       };
       if (condition === "graded") {
         body.grading_company = gradingCompany;
@@ -407,7 +438,7 @@ export default function AddCardPage() {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && doSearch()}
-                  placeholder={isSportsCategory ? "e.g. LeBron James rookie upper deck #201" : `Search ${CATEGORIES.find((c) => c.value === category)?.label} cards (e.g. pikachu #63)...`}
+                  placeholder={isSportsCategory ? "e.g. LeBron James rookie upper deck #201" : "e.g. pikachu #63"}
                   className="flex-1 px-4 py-3 rounded-lg bg-card-bg border border-card-border focus:border-accent focus:outline-none"
                 />
                 <button
@@ -416,6 +447,25 @@ export default function AddCardPage() {
                   className="px-6 py-3 rounded-lg bg-accent hover:bg-accent-hover text-white font-medium disabled:opacity-50 transition-colors"
                 >
                   {searching ? "..." : "Search"}
+                </button>
+              </div>
+
+              {/* eBay URL lookup */}
+              <div className="flex gap-2 mb-6">
+                <input
+                  type="text"
+                  value={ebayUrl}
+                  onChange={(e) => setEbayUrl(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && doEbayUrlLookup()}
+                  placeholder="Or paste eBay listing URL..."
+                  className="flex-1 px-4 py-2 rounded-lg bg-card-bg border border-card-border focus:border-accent focus:outline-none text-sm"
+                />
+                <button
+                  onClick={doEbayUrlLookup}
+                  disabled={ebayUrlLoading || !ebayUrl.match(/ebay\.com\/itm\/(?:.*\/)?(\d+)/)}
+                  className="px-4 py-2 rounded-lg bg-card-bg border border-card-border hover:border-accent text-sm font-medium disabled:opacity-50 transition-colors"
+                >
+                  {ebayUrlLoading ? "..." : "Lookup"}
                 </button>
               </div>
 
@@ -538,6 +588,91 @@ export default function AddCardPage() {
                       />
                     </div>
                   </div>
+
+                  {/* Condition */}
+                  <div>
+                    <label className="block text-sm text-muted mb-2">Condition</label>
+                    <div className="flex gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setCondition("raw")}
+                        className={`flex-1 py-2.5 rounded-lg font-medium text-center text-sm transition-colors ${
+                          condition === "raw"
+                            ? "bg-accent text-white"
+                            : "bg-background border border-card-border text-muted hover:text-foreground"
+                        }`}
+                      >
+                        Raw
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCondition("graded")}
+                        className={`flex-1 py-2.5 rounded-lg font-medium text-center text-sm transition-colors ${
+                          condition === "graded"
+                            ? "bg-accent text-white"
+                            : "bg-background border border-card-border text-muted hover:text-foreground"
+                        }`}
+                      >
+                        Graded
+                      </button>
+                    </div>
+                  </div>
+                  {condition === "graded" && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm text-muted mb-1">Company</label>
+                        <select
+                          value={gradingCompany}
+                          onChange={(e) => setGradingCompany(e.target.value as GradingCompany)}
+                          className="w-full px-3 py-2.5 rounded-lg bg-background border border-card-border focus:border-accent focus:outline-none text-sm"
+                        >
+                          <option value="PSA">PSA</option>
+                          <option value="BGS">BGS</option>
+                          <option value="CGC">CGC</option>
+                          <option value="SGC">SGC</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm text-muted mb-1">Grade</label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="10"
+                          step="0.5"
+                          value={grade}
+                          onChange={(e) => setGrade(e.target.value)}
+                          className="w-full px-3 py-2.5 rounded-lg bg-background border border-card-border focus:border-accent focus:outline-none text-sm"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Tags */}
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setIsFirstEdition(!isFirstEdition)}
+                      className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        isFirstEdition
+                          ? "bg-accent text-white"
+                          : "bg-background border border-card-border text-muted hover:text-foreground"
+                      }`}
+                    >
+                      1st Edition
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsAuto(!isAuto)}
+                      className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        isAuto
+                          ? "bg-accent text-white"
+                          : "bg-background border border-card-border text-muted hover:text-foreground"
+                      }`}
+                    >
+                      Autographed
+                    </button>
+                  </div>
+
                   <button
                     onClick={() => {
                       if (!manualName.trim()) return;
@@ -615,6 +750,91 @@ export default function AddCardPage() {
                   className="w-full px-4 py-3 rounded-lg bg-card-bg border border-card-border focus:border-accent focus:outline-none"
                 />
               </div>
+
+              {/* Condition */}
+              <div>
+                <label className="block text-sm text-muted mb-2">Condition</label>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setCondition("raw")}
+                    className={`flex-1 py-2.5 rounded-lg font-medium text-center text-sm transition-colors ${
+                      condition === "raw"
+                        ? "bg-accent text-white"
+                        : "bg-card-bg border border-card-border text-muted hover:text-foreground"
+                    }`}
+                  >
+                    Raw
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCondition("graded")}
+                    className={`flex-1 py-2.5 rounded-lg font-medium text-center text-sm transition-colors ${
+                      condition === "graded"
+                        ? "bg-accent text-white"
+                        : "bg-card-bg border border-card-border text-muted hover:text-foreground"
+                    }`}
+                  >
+                    Graded
+                  </button>
+                </div>
+              </div>
+              {condition === "graded" && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm text-muted mb-1">Company</label>
+                    <select
+                      value={gradingCompany}
+                      onChange={(e) => setGradingCompany(e.target.value as GradingCompany)}
+                      className="w-full px-3 py-2.5 rounded-lg bg-card-bg border border-card-border focus:border-accent focus:outline-none text-sm"
+                    >
+                      <option value="PSA">PSA</option>
+                      <option value="BGS">BGS</option>
+                      <option value="CGC">CGC</option>
+                      <option value="SGC">SGC</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-muted mb-1">Grade</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="10"
+                      step="0.5"
+                      value={grade}
+                      onChange={(e) => setGrade(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-lg bg-card-bg border border-card-border focus:border-accent focus:outline-none text-sm"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Tags */}
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsFirstEdition(!isFirstEdition)}
+                  className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    isFirstEdition
+                      ? "bg-accent text-white"
+                      : "bg-card-bg border border-card-border text-muted hover:text-foreground"
+                  }`}
+                >
+                  1st Edition
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsAuto(!isAuto)}
+                  className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    isAuto
+                      ? "bg-accent text-white"
+                      : "bg-card-bg border border-card-border text-muted hover:text-foreground"
+                  }`}
+                >
+                  Autographed
+                </button>
+              </div>
+
               <button
                 onClick={async () => {
                   if (!manualName.trim()) return;
@@ -649,7 +869,7 @@ export default function AddCardPage() {
       )}
 
       {/* Step 3: Details */}
-      {step === "details" && !bulkMode && (
+      {step === "details" && (
         <div>
           <button
             onClick={() => setStep("search")}
@@ -859,6 +1079,32 @@ export default function AddCardPage() {
               </div>
             )}
 
+            {/* Tags: 1st Edition + Auto */}
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setIsFirstEdition(!isFirstEdition)}
+                className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  isFirstEdition
+                    ? "bg-accent text-white"
+                    : "bg-card-bg border border-card-border text-muted hover:text-foreground"
+                }`}
+              >
+                1st Edition
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsAuto(!isAuto)}
+                className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  isAuto
+                    ? "bg-accent text-white"
+                    : "bg-card-bg border border-card-border text-muted hover:text-foreground"
+                }`}
+              >
+                Autographed
+              </button>
+            </div>
+
             {/* Quantity */}
             <div>
               <label className="block text-sm text-muted mb-1">Quantity</label>
@@ -897,19 +1143,22 @@ export default function AddCardPage() {
 
             <button
               onClick={async () => {
-                if (selectedCard) {
+                const cardName = selectedCard?.name || manualName;
+                if (cardName?.trim()) {
                   setEstimatingPrice(true);
                   try {
                     const res = await fetch("/api/prices/estimate", {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({
-                        playerName: selectedCard.name,
-                        setName: manualSet || selectedCard.set_name || null,
-                        year: manualYear || selectedCard.year || null,
-                        cardNumber: manualNumber || selectedCard.card_number || null,
-                        parallel: manualRarity || selectedCard.rarity || null,
+                        playerName: cardName,
+                        setName: manualSet || selectedCard?.set_name || null,
+                        year: manualYear || selectedCard?.year || null,
+                        cardNumber: manualNumber || selectedCard?.card_number || null,
+                        parallel: manualRarity || selectedCard?.rarity || null,
                         variant: manualVariant || null,
+                        isFirstEdition,
+                        isAuto,
                         category,
                         condition,
                         gradingCompany:
@@ -919,13 +1168,15 @@ export default function AddCardPage() {
                     });
                     const data = await res.json();
                     if (data.prices?.length > 0) {
-                      setSelectedCard({
-                        ...selectedCard,
-                        prices: data.prices,
-                        ...(isSportsCategory && data.listingImageUrl
-                          ? { image_url: data.listingImageUrl }
-                          : {}),
-                      });
+                      if (selectedCard) {
+                        setSelectedCard({
+                          ...selectedCard,
+                          prices: data.prices,
+                          ...(data.listingImageUrl && !selectedCard.image_url
+                            ? { image_url: data.listingImageUrl }
+                            : {}),
+                        });
+                      }
                       const market = data.prices.find(
                         (p: { condition_key: string }) =>
                           p.condition_key === "market"
