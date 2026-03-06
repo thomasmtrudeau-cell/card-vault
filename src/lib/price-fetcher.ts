@@ -203,8 +203,10 @@ interface FilterContext {
 }
 
 const JUNK_PATTERNS = /you pick|pick your|choose your|complete your set|lot of|mystery|repack/i;
-// Multi-card bulk listings: "44/46/63/102", "charmander squirtle bulbasaur"
+// Multi-card bulk listings: "44/46/63/102"
 const BULK_PATTERNS = /\d+\/\d+\/\d+/;
+// Non-English Pokemon cards (Japanese, Korean, Chinese, etc.)
+const NON_ENGLISH_PATTERNS = /\bjapanese\b|\bjpn\b|\bkorean\b|\bchinese\b|\bfrench\b|\bgerman\b|\bitalian\b|\bspanish\b|\bportuguese\b|\bdutch\b/i;
 const DISCOUNT = 0.85;
 
 // Grade values for comparison (higher = better)
@@ -222,6 +224,9 @@ function isListingValid(title: string, ctx?: FilterContext): boolean {
 
   // Filter bulk/multi-card listings
   if (BULK_PATTERNS.test(title)) return false;
+
+  // Filter non-English Pokemon cards
+  if (NON_ENGLISH_PATTERNS.test(t)) return false;
 
   // If card is NOT 1st edition, filter out 1st edition listings
   // (they're much more expensive and would inflate the price)

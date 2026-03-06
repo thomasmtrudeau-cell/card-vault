@@ -93,6 +93,7 @@ export async function POST(request: NextRequest) {
 
     const junkPatterns = /you pick|pick your|choose your|complete your set|lot of|mystery|repack/i;
     const bulkPatterns = /\d+\/\d+\/\d+/;
+    const nonEnglishPatterns = /\bjapanese\b|\bjpn\b|\bkorean\b|\bchinese\b|\bfrench\b|\bgerman\b|\bitalian\b|\bspanish\b|\bportuguese\b|\bdutch\b/i;
     const targetGrade = (condition === "graded" && grade) ? parseFloat(String(grade)) : null;
 
     type EbayItem = { title?: string; price?: { value?: string }; image?: { imageUrl?: string } };
@@ -101,6 +102,7 @@ export async function POST(request: NextRequest) {
       const t = (item.title || "").toLowerCase();
       if (junkPatterns.test(t)) return false;
       if (bulkPatterns.test(item.title || "")) return false;
+      if (nonEnglishPatterns.test(t)) return false;
       // If card is NOT 1st edition, filter out 1st edition listings
       if (!variant || !/1st\s*edition/i.test(variant)) {
         if (/1st\s*edition/i.test(t)) return false;
