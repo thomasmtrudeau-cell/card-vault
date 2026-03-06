@@ -42,40 +42,31 @@ export async function getPricesWithRefresh(
 
   const freshPrices = await fetchPricesFromSource(card as Card, context);
 
-  // Try to insert new prices first, only delete old ones if insert succeeds
+  // Safely swap prices: get old IDs first, insert new, then clean up old
   if (freshPrices.length > 0) {
+    // Snapshot old price IDs before inserting
+    const { data: oldPrices } = await supabase
+      .from("price_cache")
+      .select("id, card_id, source, price_usd, condition_key")
+      .eq("card_id", cardId);
+    const oldIds = (oldPrices || []).map((p) => p.id);
+
+    // Insert new prices
     const { error: insertError } = await supabase.from("price_cache").insert(freshPrices);
-    if (!insertError) {
-      // Insert succeeded — now archive and delete old prices
-      const { data: oldPrices } = await supabase
-        .from("price_cache")
-        .select("id, card_id, source, price_usd, condition_key")
-        .eq("card_id", cardId);
-      // Old prices = everything except the ones we just inserted (by fetched_at)
-      const freshIds = new Set<string>();
-      if (oldPrices) {
-        // Sort by fetched_at desc, the newest N are our fresh ones
-        const sorted = [...oldPrices].sort((a, b) => a.id > b.id ? -1 : 1);
-        const freshOnes = sorted.slice(0, freshPrices.length);
-        freshOnes.forEach((p) => freshIds.add(p.id));
-        const stale = sorted.slice(freshPrices.length);
-        if (stale.length > 0) {
-          await supabase.from("price_history").insert(
-            stale.map((p) => ({
-              card_id: p.card_id,
-              source: p.source,
-              price_usd: p.price_usd,
-              condition_key: p.condition_key,
-            }))
-          );
-          await supabase
-            .from("price_cache")
-            .delete()
-            .in("id", stale.map((p) => p.id));
-        }
-      }
+    if (!insertError && oldIds.length > 0) {
+      // Archive old prices to history
+      await supabase.from("price_history").insert(
+        (oldPrices || []).map((p) => ({
+          card_id: p.card_id,
+          source: p.source,
+          price_usd: p.price_usd,
+          condition_key: p.condition_key,
+        }))
+      );
+      // Delete old prices by their specific IDs
+      await supabase.from("price_cache").delete().in("id", oldIds);
     }
-    // If insert failed (e.g. missing column), old prices remain untouched
+    // If insert failed, old prices remain untouched
   }
 
   return (await getCachedPrices(cardId)) || freshPrices;
@@ -91,7 +82,7 @@ async function fetchPricesFromSource(
     case "pokemontcg":
       return fetchPokemonPrices(card);
     case "tcgdex":
-      return fetchEbayTCGPrice(card);
+      return fetchEbayTCGPrice(card, context);
     case "scryfall":
       return fetchScryfallPrices(card);
     case "ygoprodeck":
@@ -100,7 +91,7 @@ async function fetchPricesFromSource(
       return fetchEbaySportsPrice(card, context);
     case "ebay":
       if (TCG_CATEGORIES.includes(card.category)) {
-        return fetchEbayTCGPrice(card);
+        return fetchEbayTCGPrice(card, context);
       }
       return fetchEbaySportsPrice(card, context);
     default:
@@ -279,7 +270,8 @@ async function getEbayToken(): Promise<string | null> {
 
 // eBay Browse API pricing for Pokemon/TCG cards
 async function fetchEbayTCGPrice(
-  card: Card
+  card: Card,
+  context?: RefreshContext
 ): Promise<Omit<PriceCache, "id" | "fetched_at">[]> {
   try {
     const token = await getEbayToken();
@@ -289,6 +281,10 @@ async function fetchEbayTCGPrice(
     if (card.set_name) parts.push(card.set_name);
     parts.push(card.name);
     if (card.card_number) parts.push(`#${card.card_number}`);
+    if (context?.gradingCompany) {
+      parts.push(String(context.gradingCompany));
+      if (context.grade) parts.push(String(context.grade));
+    }
     if (!card.set_name) parts.push("pokemon card");
     const query = parts.join(" ") + " -lot -break -box -pack -repack";
 
@@ -346,10 +342,9 @@ export interface PriceRange {
 }
 
 export function getPriceRange(prices: PriceCache[]): PriceRange {
-  const market = getAveragePrice(prices);
-  const mid = prices.find((p) => p.condition_key === "mid")?.price_usd ?? null;
+  const market = getAveragePrice(prices); // lowest BIN × 0.85
   const high = prices.find((p) => p.condition_key === "high")?.price_usd ?? null;
-  return { low: market, market: mid ?? market, high };
+  return { low: market, market, high };
 }
 
 export function getAveragePrice(prices: PriceCache[]): number | null {
