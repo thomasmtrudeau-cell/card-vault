@@ -343,26 +343,49 @@ async function searchEbayCards(
     // Only add sport keyword for short/vague queries (3 words or less)
     const wordCount = query.trim().split(/\s+/).length;
     const suffix = wordCount <= 3 ? ` ${sportKeyword} card` : " card";
-    const searchQuery = `${query}${suffix} -lot -break -box -pack -repack -case`;
+    const exclusions = " -lot -break -box -pack -repack -case";
+    const baseFilter = `buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[1..],priceCurrency:USD`;
+    const authHeaders = { Authorization: `Bearer ${tokenData.access_token}` };
+
+    const searchQuery = `${query}${suffix}${exclusions}`;
     let browseRes = await fetch(
-      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(searchQuery)}&category_ids=261328&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[5..],priceCurrency:USD&limit=30`,
-      { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
+      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(searchQuery)}&category_ids=261328&filter=${baseFilter}&limit=30`,
+      { headers: authHeaders }
     );
     if (!browseRes.ok) return [];
     let browseData = await browseRes.json();
 
-    // If no results and query has a # card number, retry without it
+    // If few results, retry without "card" suffix (more results from eBay)
+    if ((!browseData.itemSummaries || browseData.itemSummaries.length < 5) && wordCount > 3) {
+      const simpleQuery = `${query}${exclusions}`;
+      const retryRes = await fetch(
+        `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(simpleQuery)}&category_ids=261328&filter=${baseFilter}&limit=30`,
+        { headers: authHeaders }
+      );
+      if (retryRes.ok) {
+        const retryData = await retryRes.json();
+        if ((retryData.itemSummaries || []).length > (browseData.itemSummaries || []).length) {
+          browseData = retryData;
+        }
+      }
+    }
+
+    // If no/few results and query has a # card number, retry without it
     if (
-      (!browseData.itemSummaries || browseData.itemSummaries.length === 0) &&
+      (!browseData.itemSummaries || browseData.itemSummaries.length < 3) &&
       /#\S+/.test(query)
     ) {
-      const relaxedQuery = `${query.replace(/#\S+/g, "").trim()}${suffix} -lot -break -box -pack -repack -case`;
+      const relaxedQuery = `${query.replace(/#\S+/g, "").trim()}${suffix}${exclusions}`;
       browseRes = await fetch(
-        `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(relaxedQuery)}&category_ids=261328&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[5..],priceCurrency:USD&limit=30`,
-        { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
+        `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(relaxedQuery)}&category_ids=261328&filter=${baseFilter}&limit=30`,
+        { headers: authHeaders }
       );
-      if (!browseRes.ok) return [];
-      browseData = await browseRes.json();
+      if (browseRes.ok) {
+        const relaxedData = await browseRes.json();
+        if ((relaxedData.itemSummaries || []).length > (browseData.itemSummaries || []).length) {
+          browseData = relaxedData;
+        }
+      }
     }
 
     const DISCOUNT = 0.85;
