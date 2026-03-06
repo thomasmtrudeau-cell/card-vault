@@ -10,6 +10,7 @@ interface PriceRow {
   source: string;
   price_usd: number | null;
   condition_key: string | null;
+  listing_url: string | null;
   fetched_at: string;
 }
 

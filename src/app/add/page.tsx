@@ -239,6 +239,7 @@ export default function AddCardPage() {
             source: p.source,
             price_usd: p.price_usd,
             condition_key: p.condition_key,
+            listing_url: null,
           }))
         )
       : null);

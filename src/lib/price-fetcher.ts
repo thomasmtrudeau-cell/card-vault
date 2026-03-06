@@ -83,7 +83,6 @@ async function fetchPricesFromSource(
     case "thesportsdb":
       return fetchEbaySportsPrice(card, context);
     case "ebay":
-      // Cards added via eBay search — use appropriate eBay pricer
       if (TCG_CATEGORIES.includes(card.category)) {
         return fetchEbayTCGPrice(card);
       }
@@ -115,6 +114,7 @@ async function fetchPokemonPrices(
           source: "tcgplayer",
           price_usd: val.market,
           condition_key: `${key}_market`,
+          listing_url: null,
         });
     }
   }
@@ -138,6 +138,7 @@ async function fetchScryfallPrices(
       source: "scryfall",
       price_usd: parseFloat(data.prices.usd),
       condition_key: "market",
+      listing_url: data.purchase_uris?.tcgplayer || null,
     });
   if (data.prices?.usd_foil)
     prices.push({
@@ -145,6 +146,7 @@ async function fetchScryfallPrices(
       source: "scryfall",
       price_usd: parseFloat(data.prices.usd_foil),
       condition_key: "foil",
+      listing_url: data.purchase_uris?.tcgplayer || null,
     });
   return prices;
 }
@@ -167,6 +169,7 @@ async function fetchYugiohPrices(
         source: "tcgplayer",
         price_usd: parseFloat(p.tcgplayer_price),
         condition_key: "market",
+        listing_url: null,
       });
     if (p.cardmarket_price && parseFloat(p.cardmarket_price) > 0)
       prices.push({
@@ -174,33 +177,97 @@ async function fetchYugiohPrices(
         source: "cardmarket",
         price_usd: parseFloat(p.cardmarket_price),
         condition_key: "market",
+        listing_url: null,
       });
   }
   return prices;
+}
+
+interface EbayListing {
+  title?: string;
+  price?: { value?: string };
+  itemWebUrl?: string;
+}
+
+const JUNK_PATTERNS = /you pick|pick your|choose your|complete your set|lot of|mystery|repack/i;
+const DISCOUNT = 0.85;
+
+function buildEbayPrices(
+  cardId: string,
+  rawListings: EbayListing[]
+): Omit<PriceCache, "id" | "fetched_at">[] {
+  const listings = rawListings.filter(
+    (item) => !JUNK_PATTERNS.test(item.title || "")
+  );
+
+  // Build sorted price+url pairs
+  const priced = listings
+    .map((item) => ({
+      price: item.price?.value ? parseFloat(item.price.value) : null,
+      url: item.itemWebUrl || null,
+    }))
+    .filter((p): p is { price: number; url: string | null } => p.price !== null && p.price > 0)
+    .sort((a, b) => a.price - b.price);
+
+  if (priced.length === 0) return [];
+
+  const lowest = priced[0];
+  const medianItem = priced[Math.floor(priced.length / 2)];
+  const highest = priced[priced.length - 1];
+
+  return [
+    {
+      card_id: cardId,
+      source: "ebay",
+      price_usd: Math.round(lowest.price * DISCOUNT * 100) / 100,
+      condition_key: "market",
+      listing_url: lowest.url,
+    },
+    {
+      card_id: cardId,
+      source: "ebay",
+      price_usd: Math.round(medianItem.price * DISCOUNT * 100) / 100,
+      condition_key: "mid",
+      listing_url: medianItem.url,
+    },
+    {
+      card_id: cardId,
+      source: "ebay",
+      price_usd: Math.round(highest.price * DISCOUNT * 100) / 100,
+      condition_key: "high",
+      listing_url: highest.url,
+    },
+  ];
+}
+
+async function getEbayToken(): Promise<string | null> {
+  const clientId = process.env.EBAY_CLIENT_ID;
+  const clientSecret = process.env.EBAY_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return null;
+
+  const tokenRes = await fetch(
+    "https://api.ebay.com/identity/v1/oauth2/token",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
+      },
+      body: "grant_type=client_credentials&scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope",
+    }
+  );
+  if (!tokenRes.ok) return null;
+  const tokenData = await tokenRes.json();
+  return tokenData.access_token;
 }
 
 // eBay Browse API pricing for Pokemon/TCG cards
 async function fetchEbayTCGPrice(
   card: Card
 ): Promise<Omit<PriceCache, "id" | "fetched_at">[]> {
-  const clientId = process.env.EBAY_CLIENT_ID;
-  const clientSecret = process.env.EBAY_CLIENT_SECRET;
-  if (!clientId || !clientSecret) return [];
-
   try {
-    const tokenRes = await fetch(
-      "https://api.ebay.com/identity/v1/oauth2/token",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
-        },
-        body: "grant_type=client_credentials&scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope",
-      }
-    );
-    if (!tokenRes.ok) return [];
-    const tokenData = await tokenRes.json();
+    const token = await getEbayToken();
+    if (!token) return [];
 
     const parts: string[] = [];
     if (card.set_name) parts.push(card.set_name);
@@ -211,66 +278,26 @@ async function fetchEbayTCGPrice(
 
     const browseRes = await fetch(
       `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&category_ids=183454&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[5..],priceCurrency:USD&limit=50`,
-      { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
+      { headers: { Authorization: `Bearer ${token}` } }
     );
     if (!browseRes.ok) return [];
     const browseData = await browseRes.json();
 
-    const junkPatterns = /you pick|pick your|choose your|complete your set|lot of|mystery|repack/i;
-    const listings = (browseData.itemSummaries || []).filter(
-      (item: { title?: string }) => !junkPatterns.test(item.title || "")
-    );
-    const listingPrices: number[] = listings
-      .map(
-        (item: { price?: { value?: string } }) =>
-          item.price?.value ? parseFloat(item.price.value) : null
-      )
-      .filter((p: number | null): p is number => p !== null && p > 0)
-      .sort((a: number, b: number) => a - b);
-
-    if (listingPrices.length === 0) return [];
-
-    const DISCOUNT = 0.85;
-    const market = Math.round(listingPrices[0] * DISCOUNT * 100) / 100;
-    const median = listingPrices[Math.floor(listingPrices.length / 2)];
-    const mid = Math.round(median * DISCOUNT * 100) / 100;
-    const high = Math.round(listingPrices[listingPrices.length - 1] * DISCOUNT * 100) / 100;
-
-    return [
-      { card_id: card.id, source: "ebay", price_usd: market, condition_key: "market" },
-      { card_id: card.id, source: "ebay", price_usd: mid, condition_key: "mid" },
-      { card_id: card.id, source: "ebay", price_usd: high, condition_key: "high" },
-    ];
+    return buildEbayPrices(card.id, browseData.itemSummaries || []);
   } catch {
     return [];
   }
 }
 
-// eBay Browse API pricing for sports cards (refresh)
+// eBay Browse API pricing for sports cards
 async function fetchEbaySportsPrice(
   card: Card,
   context?: RefreshContext
 ): Promise<Omit<PriceCache, "id" | "fetched_at">[]> {
-  const clientId = process.env.EBAY_CLIENT_ID;
-  const clientSecret = process.env.EBAY_CLIENT_SECRET;
-  if (!clientId || !clientSecret) return [];
-
   try {
-    const tokenRes = await fetch(
-      "https://api.ebay.com/identity/v1/oauth2/token",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
-        },
-        body: "grant_type=client_credentials&scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope",
-      }
-    );
-    if (!tokenRes.ok) return [];
-    const tokenData = await tokenRes.json();
+    const token = await getEbayToken();
+    if (!token) return [];
 
-    // Build a specific search query from card details
     const parts: string[] = [];
     if (card.year) parts.push(String(card.year));
     if (card.set_name) parts.push(card.set_name);
@@ -285,37 +312,12 @@ async function fetchEbaySportsPrice(
 
     const browseRes = await fetch(
       `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(parts.join(" ") + " -lot -break -box -pack -repack")}&category_ids=261328&filter=buyingOptions:{FIXED_PRICE},deliveryCountry:US,price:[5..],priceCurrency:USD&limit=50`,
-      { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
+      { headers: { Authorization: `Bearer ${token}` } }
     );
     if (!browseRes.ok) return [];
     const browseData = await browseRes.json();
 
-    const junkPatterns = /you pick|pick your|choose your|complete your set|lot of|mystery|repack/i;
-    const listings = (browseData.itemSummaries || []).filter(
-      (item: { title?: string }) => !junkPatterns.test(item.title || "")
-    );
-    const listingPrices: number[] = listings
-      .map(
-        (item: { price?: { value?: string } }) =>
-          item.price?.value ? parseFloat(item.price.value) : null
-      )
-      .filter((p: number | null): p is number => p !== null && p > 0)
-      .sort((a: number, b: number) => a - b);
-
-    if (listingPrices.length === 0) return [];
-
-    // Market = lowest BIN × 0.85 (what you'd realistically pay)
-    const DISCOUNT = 0.85;
-    const market = Math.round(listingPrices[0] * DISCOUNT * 100) / 100;
-    const median = listingPrices[Math.floor(listingPrices.length / 2)];
-    const mid = Math.round(median * DISCOUNT * 100) / 100;
-    const high = Math.round(listingPrices[listingPrices.length - 1] * DISCOUNT * 100) / 100;
-
-    return [
-      { card_id: card.id, source: "ebay", price_usd: market, condition_key: "market" },
-      { card_id: card.id, source: "ebay", price_usd: mid, condition_key: "mid" },
-      { card_id: card.id, source: "ebay", price_usd: high, condition_key: "high" },
-    ];
+    return buildEbayPrices(card.id, browseData.itemSummaries || []);
   } catch {
     return [];
   }
@@ -344,7 +346,6 @@ export function getAveragePrice(prices: PriceCache[]): number | null {
         p.condition_key === "holofoil_market")
   );
   if (marketPrices.length === 0) {
-    // Fallback: use any price
     const anyPrices = prices.filter(
       (p) => p.price_usd !== null && p.price_usd > 0
     );

@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS price_cache (
   source text NOT NULL CHECK (source IN ('tcgplayer', 'cardmarket', 'scryfall', 'ygoprodeck', 'ebay', 'manual')),
   price_usd numeric,
   condition_key text,
+  listing_url text,
   fetched_at timestamptz DEFAULT now()
 );
 

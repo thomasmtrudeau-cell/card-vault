@@ -19,6 +19,8 @@ export default function CollectionPage() {
   );
   const [sortBy, setSortBy] = useState<SortKey>("date");
   const [searchQuery, setSearchQuery] = useState("");
+  const [refreshingAll, setRefreshingAll] = useState(false);
+  const [refreshResult, setRefreshResult] = useState<string | null>(null);
 
   const fetchCollection = useCallback(async () => {
     setLoading(true);
@@ -129,12 +131,37 @@ export default function CollectionPage() {
         <h1 className="text-2xl font-bold">Collection</h1>
         <div className="flex items-center gap-2">
           {items.length > 0 && (
-            <button
-              onClick={exportCSV}
-              className="px-4 py-2 rounded-lg bg-card-bg border border-card-border hover:border-accent text-sm font-medium transition-colors"
-            >
-              Export CSV
-            </button>
+            <>
+              <button
+                onClick={async () => {
+                  setRefreshingAll(true);
+                  setRefreshResult(null);
+                  try {
+                    const res = await fetch("/api/prices/refresh-all", { method: "POST" });
+                    const data = await res.json();
+                    if (data.error) {
+                      setRefreshResult("Failed to refresh prices");
+                    } else {
+                      setRefreshResult(`Refreshed ${data.refreshed}/${data.total} cards`);
+                      fetchCollection();
+                    }
+                  } catch {
+                    setRefreshResult("Failed to refresh prices");
+                  }
+                  setRefreshingAll(false);
+                }}
+                disabled={refreshingAll}
+                className="px-4 py-2 rounded-lg bg-card-bg border border-card-border hover:border-accent text-sm font-medium transition-colors disabled:opacity-50"
+              >
+                {refreshingAll ? "Refreshing..." : "Refresh All Prices"}
+              </button>
+              <button
+                onClick={exportCSV}
+                className="px-4 py-2 rounded-lg bg-card-bg border border-card-border hover:border-accent text-sm font-medium transition-colors"
+              >
+                Export CSV
+              </button>
+            </>
           )}
           <Link
             href="/add"
@@ -180,6 +207,13 @@ export default function CollectionPage() {
           <option value="grade">Grade: High → Low</option>
         </select>
       </div>
+
+      {refreshResult && (
+        <div className="text-sm text-success mb-4 bg-card-bg border border-card-border rounded-lg px-3 py-2 flex items-center justify-between">
+          <span>{refreshResult}</span>
+          <button onClick={() => setRefreshResult(null)} className="text-muted hover:text-foreground ml-2">✕</button>
+        </div>
+      )}
 
       {searchQuery && (
         <div className="text-sm text-muted mb-4">

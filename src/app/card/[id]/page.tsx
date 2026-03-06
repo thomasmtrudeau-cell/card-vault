@@ -338,9 +338,20 @@ export default function CardDetailPage({
                         <span className="text-xs ml-1">({p.condition_key === "mid" ? "Median" : p.condition_key})</span>
                       )}
                     </span>
-                    <span className="font-medium">
-                      {formatPrice(p.price_usd)}
-                    </span>
+                    {p.listing_url ? (
+                      <a
+                        href={p.listing_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-medium text-accent hover:text-accent-hover underline"
+                      >
+                        {formatPrice(p.price_usd)}
+                      </a>
+                    ) : (
+                      <span className="font-medium">
+                        {formatPrice(p.price_usd)}
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>
