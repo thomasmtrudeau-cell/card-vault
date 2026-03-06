@@ -247,7 +247,8 @@ function isListingValid(listing: EbayListing, ctx?: FilterContext): boolean {
   if (ctx?.cardName) {
     const nameWords = ctx.cardName
       .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, "") // strip punctuation
+      .replace(/[-]/g, " ") // hyphens → spaces (e.g. "Heatran-EX" → "Heatran EX")
+      .replace(/[^a-z0-9\s]/g, "") // strip other punctuation
       .split(/\s+/)
       .filter((w) => w.length >= 3);
     // Require all significant words to appear in the title

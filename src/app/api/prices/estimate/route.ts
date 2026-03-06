@@ -115,6 +115,7 @@ export async function POST(request: NextRequest) {
       if (noveltyPatterns.test(t)) return false;
       // Listing title must contain the key words from the card/player name
       const nameWords = playerNameLower
+        .replace(/[-]/g, " ") // hyphens → spaces (e.g. "Heatran-EX" → "Heatran EX")
         .replace(/[^a-z0-9\s]/g, "")
         .split(/\s+/)
         .filter((w: string) => w.length >= 3);
