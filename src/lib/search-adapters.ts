@@ -3,18 +3,48 @@ import type { SearchResult, CardCategory } from "./types";
 // Pokemon TCG adapter (TCGdex — free, no key required)
 // Falls back to pokemontcg.io API when TCGdex returns no results
 // Supports "squirtle #63" syntax to filter by card number
+// Normalize Pokemon name variants: "heatran ex" → also try "heatran-ex"
+// Pokemon TCG databases use hyphenated forms (Heatran-EX, Raichu-GX, etc.)
+function getNameVariants(name: string): string[] {
+  const variants = [name];
+  // Add hyphenated form: "heatran ex" → "heatran-ex"
+  const suffixPattern = /^(.+?)\s+(ex|gx|gmax|vmax|vstar|v|lv\.?\s*x)$/i;
+  const match = name.match(suffixPattern);
+  if (match) {
+    variants.push(`${match[1]}-${match[2]}`);
+  }
+  return variants;
+}
+
 async function searchPokemon(query: string): Promise<SearchResult[]> {
   // Parse optional card number from query (e.g. "squirtle #63" or "squirtle 63")
   const numberMatch = query.match(/\s*#?(\d+)\s*$/);
   const name = numberMatch ? query.slice(0, numberMatch.index).trim() : query;
   const cardNumber = numberMatch ? numberMatch[1] : null;
 
-  // Try TCGdex first
-  const results = await searchPokemonTCGdex(name, cardNumber);
-  if (results.length > 0) return results;
+  // Try all name variants on TCGdex (e.g. "heatran ex" and "heatran-ex")
+  const variants = getNameVariants(name);
+  for (const variant of variants) {
+    const results = await searchPokemonTCGdex(variant, cardNumber);
+    if (results.length > 0) return results;
+  }
 
-  // Fallback to pokemontcg.io (better fuzzy matching for EX, GX, V, etc.)
-  return searchPokemonTCGIO(name, cardNumber);
+  // Fallback to pokemontcg.io with all variants
+  for (const variant of variants) {
+    const results = await searchPokemonTCGIO(variant, cardNumber);
+    if (results.length > 0) return results;
+  }
+
+  // Last resort: try pokemontcg.io with just the base name (no suffix)
+  // e.g. "heatran" to find all Heatran cards including Heatran-EX
+  const suffixMatch = name.match(/^(.+?)\s+(?:ex|gx|gmax|vmax|vstar|v|lv\.?\s*x)$/i);
+  if (suffixMatch) {
+    const baseName = suffixMatch[1];
+    const results = await searchPokemonTCGIO(baseName, cardNumber);
+    if (results.length > 0) return results;
+  }
+
+  return [];
 }
 
 async function searchPokemonTCGdex(name: string, cardNumber: string | null): Promise<SearchResult[]> {
