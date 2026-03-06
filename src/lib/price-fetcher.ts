@@ -42,24 +42,40 @@ export async function getPricesWithRefresh(
 
   const freshPrices = await fetchPricesFromSource(card as Card, context);
 
-  // Archive old prices to history before overwriting
+  // Try to insert new prices first, only delete old ones if insert succeeds
   if (freshPrices.length > 0) {
-    const { data: oldPrices } = await supabase
-      .from("price_cache")
-      .select("card_id, source, price_usd, condition_key")
-      .eq("card_id", cardId);
-    if (oldPrices && oldPrices.length > 0) {
-      await supabase.from("price_history").insert(
-        oldPrices.map((p: { card_id: string; source: string; price_usd: number | null; condition_key: string | null }) => ({
-          card_id: p.card_id,
-          source: p.source,
-          price_usd: p.price_usd,
-          condition_key: p.condition_key,
-        }))
-      );
+    const { error: insertError } = await supabase.from("price_cache").insert(freshPrices);
+    if (!insertError) {
+      // Insert succeeded — now archive and delete old prices
+      const { data: oldPrices } = await supabase
+        .from("price_cache")
+        .select("id, card_id, source, price_usd, condition_key")
+        .eq("card_id", cardId);
+      // Old prices = everything except the ones we just inserted (by fetched_at)
+      const freshIds = new Set<string>();
+      if (oldPrices) {
+        // Sort by fetched_at desc, the newest N are our fresh ones
+        const sorted = [...oldPrices].sort((a, b) => a.id > b.id ? -1 : 1);
+        const freshOnes = sorted.slice(0, freshPrices.length);
+        freshOnes.forEach((p) => freshIds.add(p.id));
+        const stale = sorted.slice(freshPrices.length);
+        if (stale.length > 0) {
+          await supabase.from("price_history").insert(
+            stale.map((p) => ({
+              card_id: p.card_id,
+              source: p.source,
+              price_usd: p.price_usd,
+              condition_key: p.condition_key,
+            }))
+          );
+          await supabase
+            .from("price_cache")
+            .delete()
+            .in("id", stale.map((p) => p.id));
+        }
+      }
     }
-    await supabase.from("price_cache").delete().eq("card_id", cardId);
-    await supabase.from("price_cache").insert(freshPrices);
+    // If insert failed (e.g. missing column), old prices remain untouched
   }
 
   return (await getCachedPrices(cardId)) || freshPrices;
